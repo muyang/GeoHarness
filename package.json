@@ -1,0 +1,27 @@
+{
+  "name": "geoharness",
+  "private": true,
+  "version": "0.1.0",
+  "description": "GeoHarness：GeoNexus 轻客户端。连节点、跑技能、上图、会话；渲染器与能力皆插件。",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "node --test test/*.test.mjs",
+    "predev": "node scripts/copy-cesium.mjs || true",
+    "prebuild": "node scripts/copy-cesium.mjs || true"
+  },
+  "dependencies": {
+    "cesium": "^1.145.0",
+    "maplibre-gl": "^4.7.1",
+    "vue": "^3.5.13"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.1",
+    "vite": "^5.4.11"
+  }
+}
