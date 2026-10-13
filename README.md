@@ -1,101 +1,76 @@
-# GeoHarness
+# GeoHarness v0.2
 
-GeoNexus 的**轻客户端**：连 GeoNode、跑技能、看图、会话。
+GeoNexus 的独立地理工作台。当前共享运行时使用 Python 服务与静态 Web UI，Platform 通过认证网关嵌入同一运行时；客户端和平台关联账号后，共享模型配置、对话、地图、执行记录与案例。
 
-**形态**：**Web 单页应用**（Vite + Vue 3）。浏览器里跑，地图（MapLibre / Cesium）也在浏览器内渲染 —— 没有 Electron/Tauri 外壳。它可以被嵌进平台工作台（iframe 或作为 npm 包被前端引用），将来要打包成桌面端也只是加一层壳，不需要改内核。
+版本标签为 `v0.2`，Python 包版本为 `0.2.0`。GIS 计算由 GeoNode 完成；GeoHarness 负责资源发现、安装、配置、交互与任务编排，兼容官方 MCP。
 
-它与 [GeoNexus-SDK](https://github.com/muyang/GeoNexus-SDK) 的关系是**纯协议关系**：客户端不 import 任何 SDK 代码，只通过 HTTP 说 GeoMCP（JSON-RPC 2.0）。因此 SDK 里只有协议与执行面，客户端单独在本仓维护。
+## 本版能力
 
-![会话面板：确认门 + 两轮工具调用](screenshots/geoharness-chat-e2e.png)
+- **产品市场 / 我的资源**：检索第三方 GeoNode 的 Data、Model、Skill、Workflow 等产品，检查声明、固定版本和权限后安装；默认 Platform 节点不可删除或改址。
+- **第三方资源登记**：数据、算子、模型、算力描述符生成 GeoCard 与绑定；只有声明与连接配置进入客户端，远端数据和模型权重保持在节点。
+- **可配置模型**：设置 API 服务地址、模型 ID、API Key，支持 OpenAI Chat Completions 兼容服务与本地兼容端点。空密钥保留现有值，显式清除才删除。
+- **研究助手**：持久多轮对话、按需查询契约和地图上下文、逐步工具反馈；有依赖的任务最多八步，执行需要本轮明确授权。
+- **GeoLibre 默认地图**：同源查看真实 GeoJSON、STAC 足迹与 GeoTIFF 像元，支持定位、图层动作、字段/选择摘要与撤销。
+- **完整案例卡**：保存产品摘要、参数、依赖、来源、科学限制与产物哈希；锁定产品版本后复跑完整步骤。
 
----
+仓库还保留原有 Vue 前端源码、测试与截图，其使用说明见 [README-v0.1.md](README-v0.1.md)。共享工作台使用下面的 Python 入口。
 
-## 快速开始
+## 安装与启动
 
-需要 **Node ≥ 20**。
+验证环境为 Python 3.12。需要提供匹配的已审核 SDK 源码，然后在本仓库根目录运行：
 
-```bash
-npm install
-npm run dev            # http://localhost:5175
+```sh
+python3.12 -m venv .venv
+.venv/bin/python -m pip install -e "/path/to/reviewed-sdk[mcp,server]"
+.venv/bin/python -m pip install -e '.[geolibre,test]'
+.venv/bin/geoharness --workspace /absolute/private-geoharness-workspace --port 8810
 ```
 
-开发服务器把 `/node` 代理到 `http://127.0.0.1:8787`（可用环境变量改）：
+打开 `http://127.0.0.1:8810/`。默认监听本机回环地址。`workspace` 存储实际模型设置、连接凭据、安装记录、任务与产物，应该放在源码仓库外。
 
-```bash
-GEONODE_URL=http://192.168.100.101:8787 npm run dev
+**依赖发布状态**：运行需要 SDK 的 `geonexus.registration` 等扩展接口。`GeoNexus-SDK` 当前远端 `main` 的 1.0.0 源码尚不含这些接口；仅安装该旧版本不能启动此共享运行时。本版 Python 声明要求 SDK 1.1 开发线，验证使用匹配的本地已审核源码。GeoKG / Platform 插件扩展也需要匹配的已审核版本，不能假定远端旧版本已兼容。SDK 与 GeoKG 的源码发布不在本标签范围内。
+
+GeoLibre Viewer 使用 3.3.0；GeoNode WASI 算子执行器独立使用其审核版本。可选依赖版本见 [requirements-tested.txt](requirements-tested.txt)。运行真实案例还须连接有实际数据和执行能力的已授权 GeoNode；客户端安装不会启动远端算力或复制原始数据。
+
+## 关联 Platform
+
+1. 在设置页选择 Platform 地址并登录平台成员账号。
+2. 点击“关联 Platform 账号”，进入同一成员工作空间。
+3. 两端部署环境使用一致的私有 `GEONEXUS_HARNESS_GATEWAY_KEY`；配置 `GEONEXUS_PLATFORM_URL`，Platform 配置 `GEONEXUS_HARNESS_URL`。
+4. 用户在设置界面配置自己的 LLM；新账号不会继承另一个账号的模型密钥。
+
+调用签名、逐请求权限与产物所有权由网关验证。平台会话、节点令牌和模型密钥不会进入 URL、公开地图、案例卡或模型工具上下文。
+
+## 使用流程
+
+在产品市场搜索资源 → 查看契约和调用状态 → 明确授权后安装 → 配置输入 → 运行并查看逐步反馈 → 在地图查看成果或下载 → 保存完整案例并复跑。
+
+香港局部 WorldPop 2020 与武汉 2020-12-25 Landsat NDVI 是固定真实案例，范围、时间、质量规则与哈希均由节点声明；结果不能外推为全市或当前年份结论。内置湿地产品使用固定随机种子的合成数据和演示模型，明确标记为 synthetic。
+
+私有上传算子的案例需要重新提供输入；输入有生命周期，保存案例不等于永久保存原始私有文件。停止等待不保证取消已提交的远端计算。
+
+## 源码与验证
+
+| 目录 | 内容 |
+| --- | --- |
+| `src/geo_harness/` | Python 共享运行时、MCP 产品主机、模型对话、任务与地图服务 |
+| `src/geo_harness/ui/` | 当前工作台静态 Web UI |
+| `demo-products/` | 公开合成产品声明、案例与测试权重 |
+| `tests/` | Python、地图确认与安全渲染回归 |
+| `src/lib/`、`src/components/`、`test/` | 保留的 Vue 前端及原有测试 |
+
+```sh
+.venv/bin/python -m pytest tests -q
+npm ci
+node --test tests/test_map_viewport.cjs tests/test_dialogue_render.cjs
+# 保留的 Vue 客户端测试
+npm test
 ```
 
-打开页面 → 顶部地址栏填 `/node`（走代理）或节点完整地址 → 点「连接」。
+测试环境需匹配 SDK 与可选知识插件源码；实际验证范围及版本依赖应与发布记录一起查看，不把未启动的第三方服务报告为在线。
 
-## 连不上节点？九成是 CORS
+## 边界
 
-浏览器直连**跨域**节点时，节点必须显式放行本站来源 —— 这是故意的默认值（无鉴权节点不该对全网浏览器开放执行）。症状是页面报连接失败、而 `curl` 却是通的。
+实际 API Key、网关密钥、节点会话、运行数据库、私有 workspace 和用户文件不随本仓库发布。凭据文件采用本机私有文件权限，尚未集成系统钥匙串或静态加密。
 
-```powershell
-# Windows / PowerShell（注意 $env: 前缀，不是 bash 写法）
-$env:GEONODE_CORS_ORIGINS = 'http://localhost:5175'
-python mynode.py            # 必须同一个窗口启动
-# 长期生效：setx GEONODE_CORS_ORIGINS "http://localhost:5175"
-```
-
-```bash
-# macOS / Linux
-GEONODE_CORS_ORIGINS=http://localhost:5175 python mynode.py
-```
-
-自检（应回 `access-control-allow-origin`，而不是 405）：
-
-```bash
-curl -i -X OPTIONS http://127.0.0.1:8787/geomcp \
-  -H "Origin: http://localhost:5175" -H "Access-Control-Request-Method: POST"
-```
-
-`npm install` 若报缓存目录不可写：
-
-```bash
-NPM_CONFIG_CACHE=/tmp/npm-cache npm install
-```
-
-## 三块能力
-
-**① 地图 —— 引擎是插件**
-内置 `GeoLibre · MapLibre 2D` 与 `Cesium · 3D 地球`。地图下拉里的引擎来自**已启用的渲染器插件**，在插件管理器里关掉就消失；全关会明说"没有启用的渲染器插件"而不是白屏。
-
-**② 技能与运行**
-技能列表来自节点的 `geo.capabilities`；参数表单由技能的 `input_schema` 生成（没有 properties 时退回 JSON 输入）。执行走 `geo.execute`，可选带 GeoCards / bbox / GAAG 合约绑定。产物查看器：内联 GeoJSON → 上图；CSV → 内联表格；HTML → 内联 iframe（blob）；GeoTIFF → 诚实提示"浏览器内不解码"；路径型产物经节点的受控出口 `/artifact` 取回。
-
-**③ 会话面板（LLM）**
-OpenAI 兼容端点，**多配置档**（可增删改切换 + 真实测连，错误说人话），密钥只存本机 localStorage。工具集 = GeoMCP 方法（capabilities / describe / execute / plan），浏览器内跑 tool-calling 循环（上限 4 轮）：
-
-- 只读工具（列能力 / 看合约）**自动执行**；
-- 执行类（`geo_execute` / `geo_plan`）**先展示参数，人工点确认才发出** —— 人在环。
-
-## 一切皆是插件
-
-内置能力本身也走插件注册表（四类：`renderer` / `panel` / `knowledge` / `viewer`），插件管理器（🧩）可启停，状态持久化：
-
-| 插件 | 类型 | 说明 |
-|---|---|---|
-| `renderer.maplibre` | renderer | GeoLibre · MapLibre 2D（默认） |
-| `renderer.cesium` | renderer | Cesium 3D 地球（动态 import，不依赖 Cesium ion 令牌） |
-| `panel.chat` | panel | 会话面板（LLM + 人在环） |
-| `knowledge.geokg` | knowledge | GeoKG 知识库：**优先用节点上市场安装的 `geokg-search` 技能，零配置即插即用**；否则退回 `geokg-api` HTTP 端点；都没有就给出安装指引 |
-
-> 「经公共产品市场安装**客户端**插件（下载 JS 并动态加载）」尚未实现 —— 现在只插件化了内置能力；服务端平面（pip 包）已经可以经平台市场审批安装。
-
-## 测试与构建
-
-```bash
-npm test          # node --test：协议客户端 / CSV 解析 / 插件注册表 / LLM 配置档 / 工具循环（18 项）
-npm run build     # 产出 dist/（Cesium 静态资源由 prebuild 钩子拷到 public/cesium/）
-```
-
-浏览器端到端（真实点击流，headless Chrome + CDP）：连接节点 → 选技能 → 执行 → 上图；以及会话面板两轮工具调用 + 确认门 → `screenshots/`。
-
-## 嵌入平台工作台
-
-计划（M4）：把内核抽成 `@geonexus/client-core`（地图 + 技能 + 运行 + 查看器，不含密钥管理），平台前端以路由 `/workbench/studio` 引用并复用其登录态。
-
-## 许可
-
-Apache-2.0，见 [LICENSE](LICENSE)。
+产品安装校验清单、摘要、权限和锁定依赖；不会执行市场包中的任意 Python/JS 脚本。远端市场签名、生产多租户、多机调度与 DeepSeek Harness 适配仍待后续实现。

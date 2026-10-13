@@ -1,0 +1,50 @@
+{
+  "geocard_version": "1.0",
+  "license": "CC0-1.0",
+  "provenance": {
+    "provider": "GeoNexus synthetic fixture"
+  },
+  "compliance": {
+    "sensitivity": "public"
+  },
+  "id": "fixture.case",
+  "type": "workflow",
+  "name": "通用四类资源完整案例",
+  "description": "安装固定版本后运行特征计算、模型分类和地图交付；合成数据演示。",
+  "composition": {
+    "components": [
+      {
+        "id": "fixture.data",
+        "role": "data"
+      },
+      {
+        "id": "fixture.ndvi",
+        "role": "skill"
+      },
+      {
+        "id": "fixture.logistic",
+        "role": "model"
+      },
+      {
+        "id": "fixture.compute",
+        "role": "compute"
+      }
+    ]
+  },
+  "params": {
+    "params": [
+      {
+        "name": "threshold",
+        "type": "number",
+        "default": 0.6,
+        "minimum": 0,
+        "maximum": 1,
+        "target": "classify.params.threshold"
+      }
+    ]
+  },
+  "recipe_ref": {
+    "recipe_id": "recipe://geonexus/synthetic-wetland@0.1.0",
+    "version": "0.1.0"
+  }
+}

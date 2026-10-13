@@ -1,0 +1,21 @@
+{
+  "manifest_version": "0.1",
+  "id": "org.geonexus.geolibre",
+  "version": "0.1.0",
+  "name": "GeoLibre 地图与三维地球",
+  "description": "GeoLibre MCP 连接器与地图使用指南。Viewer 地址可配置，MCP authoring 需可选 geolibre extra。",
+  "kind": "viewer",
+  "permissions": [
+    "viewer:network",
+    "workspace:artifacts"
+  ],
+  "cards": [],
+  "skills": [
+    "SKILL.md"
+  ],
+  "dependencies": [],
+  "files": {
+    "SKILL.md": "sha256:d776ccf2040f0da3c9457d94f3f838de863ba095c56c3dd7cffac64ba03c78ff"
+  },
+  "license": "Apache-2.0"
+}

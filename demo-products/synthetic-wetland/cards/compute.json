@@ -1,0 +1,31 @@
+{
+  "geocard_version": "1.0",
+  "license": "CC0-1.0",
+  "provenance": {
+    "provider": "GeoNexus synthetic fixture"
+  },
+  "compliance": {
+    "sensitivity": "public"
+  },
+  "id": "fixture.compute",
+  "type": "compute",
+  "name": "本地演示算力",
+  "description": "固定合成数据与方法，仅验证技术链路，不代表真实生态研究结果。",
+  "access": {
+    "protocol": "mcp",
+    "endpoint": "service://fixture-node"
+  },
+  "runtime": {
+    "cpu": 1,
+    "memory": "256Mi",
+    "gpu": "none"
+  },
+  "x-geonexus": {
+    "profile": "compute/1",
+    "revision": "0.1.0",
+    "backends": [
+      "fixture-logistic",
+      "python"
+    ]
+  }
+}

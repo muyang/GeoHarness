@@ -1,0 +1,62 @@
+{
+  "geocard_version": "1.0",
+  "license": "CC0-1.0",
+  "provenance": {
+    "provider": "GeoNexus synthetic fixture"
+  },
+  "compliance": {
+    "sensitivity": "public"
+  },
+  "id": "fixture.logistic",
+  "type": "model",
+  "name": "演示逻辑回归分类模型",
+  "description": "固定合成数据与方法，仅验证技术链路，不代表真实生态研究结果。",
+  "access": {
+    "protocol": "fixture",
+    "endpoint": "service://fixture-node"
+  },
+  "runtime": {
+    "cpu": 1,
+    "memory": "16Mi",
+    "gpu": "none"
+  },
+  "inputs": [
+    {
+      "name": "features_ref",
+      "type": "string",
+      "required": true
+    }
+  ],
+  "outputs": [
+    {
+      "name": "classification_ref",
+      "type": "string"
+    }
+  ],
+  "x-geonexus": {
+    "profile": "model/1",
+    "revision": "0.1.0",
+    "model_id": "fixture.logistic",
+    "artifact": {
+      "digest": "sha256:f2312dbe85de79a4e45a810bc857225a65f7e79f702484d5242bc07ad727a261"
+    },
+    "input_schema": {
+      "type": "object",
+      "required": [
+        "features_ref"
+      ],
+      "properties": {
+        "features_ref": {
+          "type": "string"
+        }
+      }
+    },
+    "output_schema": {
+      "type": "object",
+      "required": [
+        "classification_ref",
+        "summary"
+      ]
+    }
+  }
+}

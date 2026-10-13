@@ -1,0 +1,7 @@
+{
+  "kind": "logistic-regression",
+  "intercept": -2.0388028013336643,
+  "weight": 10.292501673731232,
+  "training_seed": 42,
+  "training_samples": 160
+}

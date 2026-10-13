@@ -1,0 +1,33 @@
+{
+  "geocard_version": "1.0",
+  "license": "CC0-1.0",
+  "provenance": {
+    "provider": "GeoNexus synthetic fixture"
+  },
+  "compliance": {
+    "sensitivity": "public"
+  },
+  "id": "fixture.ndvi",
+  "type": "skill",
+  "name": "NDVI 特征算子",
+  "description": "固定合成数据与方法，仅验证技术链路，不代表真实生态研究结果。",
+  "access": {
+    "protocol": "mcp",
+    "endpoint": "service://fixture-node"
+  },
+  "x-geonexus": {
+    "profile": "operator/1",
+    "revision": "0.1.0",
+    "input_schema": {
+      "type": "object",
+      "properties": {}
+    },
+    "output_schema": {
+      "type": "object",
+      "required": [
+        "features_ref"
+      ]
+    },
+    "tool": "ndvi_features"
+  }
+}

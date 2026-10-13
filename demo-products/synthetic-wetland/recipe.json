@@ -1,0 +1,65 @@
+{
+  "recipe_version": "1.0",
+  "id": "recipe://geonexus/synthetic-wetland@0.1.0",
+  "name": "合成样例分类与地图交付",
+  "params": [
+    {
+      "name": "threshold",
+      "type": "number",
+      "default": 0.6,
+      "minimum": 0,
+      "maximum": 1,
+      "target": "classify.params.threshold"
+    }
+  ],
+  "steps": [
+    {
+      "id": "features",
+      "kind": "skill",
+      "uses": "fixture.ndvi",
+      "outputs": {
+        "features_ref": "artifact://fixture/features"
+      }
+    },
+    {
+      "id": "classify",
+      "kind": "model",
+      "uses": "fixture.logistic",
+      "depends_on": [
+        "features"
+      ],
+      "inputs": {
+        "features_ref": "step://features/features_ref"
+      },
+      "params": {
+        "threshold": "${params.threshold}"
+      },
+      "outputs": {
+        "classification_ref": "artifact://fixture/classification",
+        "summary": "artifact://fixture/summary"
+      }
+    }
+  ],
+  "requires": [
+    "fixture.data",
+    "fixture.ndvi",
+    "fixture.logistic",
+    "fixture.compute"
+  ],
+  "outputs": [
+    {
+      "name": "classification",
+      "from": "classify.classification_ref",
+      "role": "data"
+    },
+    {
+      "name": "summary",
+      "from": "classify.summary",
+      "role": "knowledge"
+    }
+  ],
+  "data_snapshot": {
+    "fixture": "0.1.0"
+  },
+  "license": "CC0-1.0"
+}

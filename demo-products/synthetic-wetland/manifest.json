@@ -1,0 +1,37 @@
+{
+  "manifest_version": "0.1",
+  "id": "org.geonexus.synthetic-wetland",
+  "version": "0.1.0",
+  "name": "四类资源 · 合成分类案例",
+  "description": "数据 → NDVI 算子 → 小型模型 → 本地算力 → 可视化。无需 LLM 或外部账号。",
+  "kind": "case",
+  "permissions": [
+    "workspace:artifacts",
+    "fixture:execute"
+  ],
+  "cards": [
+    "cards/data.json",
+    "cards/skill.json",
+    "cards/model.json",
+    "cards/compute.json",
+    "cards/case.json"
+  ],
+  "skills": [
+    "skills/wetland/SKILL.md"
+  ],
+  "recipe": "recipe.json",
+  "runtime": "fixture-node",
+  "dependencies": [],
+  "license": "CC0-1.0",
+  "files": {
+    "cards/case.json": "sha256:b5bdbac282cd760c12713c1f47d56e98d77a9fe19066331804d34cceb09d10da",
+    "cards/compute.json": "sha256:a6dbaf539cf55b04a1b6b7d49543dc9d666348baf03221c73d052688bdb60d0e",
+    "cards/data.json": "sha256:30fe92fae7704bbb34744fceaacecc1327117c8e3f2996532035196a17eb3afc",
+    "cards/model.json": "sha256:2d2ec60be9a11dab82fb0b05ba22d856253fd3d32883b61ac0b82912d2dd8ecc",
+    "cards/skill.json": "sha256:f13d701ef11b9e7b6cb89ed3a1fc9853a538cf991943b98234d853aaf90d7411",
+    "data/chip.geojson": "sha256:c86054a7a82233956818ffbf639d569fa75f397288822eee49b70e928e3eac3c",
+    "model/weights.json": "sha256:f2312dbe85de79a4e45a810bc857225a65f7e79f702484d5242bc07ad727a261",
+    "recipe.json": "sha256:4690fbf11fdbcf1d8c093e9491dadfff7c0cb43489d2c904a4cbe954e979598b",
+    "skills/wetland/SKILL.md": "sha256:451ee32dde272c3263c4b1c9372d3ac4091114e31fc432e214aaf96cdaa252f2"
+  }
+}
