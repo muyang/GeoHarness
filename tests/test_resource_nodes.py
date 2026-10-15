@@ -111,7 +111,7 @@ def test_default_platform_is_immutable(tmp_path, action):
     _, _, nodes = setup(tmp_path)
     with pytest.raises(RegistrationError, match="不可修改或删除"):
         nodes.change("platform", action, {"name": "hijack", "endpoint": "https://example.org"})
-    assert nodes.node("platform")["endpoint"] == "http://127.0.0.1:9305"
+    assert nodes.node("platform")["endpoint"] == "http://127.0.0.1:3301"
     assert nodes.public()[0]["protected"]
 
 
@@ -321,7 +321,7 @@ def test_platform_login_uses_fixed_endpoint_and_keeps_only_token(tmp_path):
 
     def peer(r):
         seen.append(r)
-        assert str(r.url) == "http://127.0.0.1:9305/api/auth/login"
+        assert str(r.url) == "http://127.0.0.1:3301/api/auth/login"
         return httpx.Response(200, json={"token": "private-session", "expiresAt": "later"})
 
     app.state.resource_nodes.transport = httpx.MockTransport(peer)

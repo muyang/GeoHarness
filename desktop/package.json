@@ -1,0 +1,16 @@
+{
+  "name": "geoharness-desktop",
+  "productName": "GeoHarness",
+  "version": "0.3.0",
+  "private": true,
+  "main": "main.cjs",
+  "description": "GeoHarness desktop shell sharing the local web runtime and Platform identity",
+  "license": "Apache-2.0",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test policy.test.cjs"
+  },
+  "devDependencies": {
+    "electron": "44.7.2"
+  }
+}

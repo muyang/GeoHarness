@@ -7,16 +7,21 @@ import re
 import time
 from urllib.parse import urlsplit
 
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, RedirectResponse
+from geonexus.registration import RegistrationError
 
 
 PREFIX = '/api/workbench/runtime'
+# RuoYi's stable account IDs are namespaced (for example ``ruoyi:12``).
+# These values are opaque identifiers, never paths or credentials.
+PRINCIPAL = re.compile(r'[A-Za-z0-9_.@:-]{1,128}')
 
 
 class WorkspaceGateway:
-    def __init__(self, app, *, key, factory, local_account, root_cookie):
+    def __init__(self, app, *, key, factory, local_account, root_cookie, local_validate=None):
         self.app, self.key, self.factory = app, key, factory
         self.local_account, self.root_cookie = local_account, root_cookie
+        self.local_validate = local_validate
 
     async def __call__(self, scope, receive, send):
         if scope['type'] != 'http':
@@ -42,7 +47,7 @@ class WorkspaceGateway:
             except ValueError:
                 valid_time = False
             valid_base = (not platform_base or (urlsplit(platform_base).scheme in {'http', 'https'} and platform_base == headers.get('x-forwarded-proto', 'http') + '://' + forwarded))
-            if (not valid_base or not self.key or not valid_time or not token or not re.fullmatch(r'[A-Za-z0-9_.@-]{1,128}', principal)
+            if (not valid_base or not self.key or not valid_time or not token or not PRINCIPAL.fullmatch(principal)
                     or host not in {'localhost', '127.0.0.1', '::1', 'testserver'}
                     or not hmac.compare_digest(expected, headers.get('x-geo-workbench-signature', ''))):
                 return await JSONResponse({'error': '平台工作台会话签名无效或过期。'}, status_code=403)(scope, receive, send)
@@ -66,7 +71,18 @@ class WorkspaceGateway:
             cookie_name, cookie_value = self.root_cookie
             cookies = dict(part.strip().split('=', 1) for part in headers.get('cookie', '').split(';') if '=' in part)
             if (not association or match[1] != association['key'] or cookies.get(cookie_name) != cookie_value):
-                return await JSONResponse({'error': '请在客户端关联当前 Platform 账号。'}, status_code=401)(scope, receive, send)
+                response = (RedirectResponse('/', status_code=303) if match[2] in {None, '/'}
+                            else JSONResponse({'error': '请在客户端关联当前 Platform 账号。', 'login_required': True, 'login_url': '/'}, status_code=401))
+                return await response(scope, receive, send)
+            if self.local_validate:
+                try:
+                    await self.local_validate()
+                except RegistrationError as exc:
+                    status = getattr(exc, 'status', 503)
+                    status = status if status in {401, 403} else 503
+                    response = (RedirectResponse('/login', status_code=303) if status == 401 and match[2] in {None, '/'}
+                                else JSONResponse({'error': str(exc), 'login_required': status == 401}, status_code=status))
+                    return await response(scope, receive, send)
             child = self.factory(association['principal'], association['token'])
             copied = dict(scope)
             copied['root_path'] = '/accounts/' + match[1]

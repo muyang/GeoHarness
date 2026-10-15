@@ -15,12 +15,16 @@ from geo_harness.gateway import WorkspaceGateway
 KEY = "shared-gateway-test-key"
 
 
-def signed(path, principal="member-a", token="member-a-private", *, stamp=None, host="127.0.0.1:9305", method="GET"):
+def signed(path, principal="member-a", token="member-a-private", *, stamp=None, host="127.0.0.1:9305", method="GET", platform_base=None):
     stamp = str(stamp if stamp is not None else int(time.time()))
-    message = "\n".join([stamp, method, path, principal, hashlib.sha256(token.encode()).hexdigest()])
-    return {"X-Geo-Workbench-Principal": principal, "X-Geo-Platform-Token": token,
+    proof = [stamp, method, path, principal, hashlib.sha256(token.encode()).hexdigest()]
+    if platform_base: proof.append(platform_base)
+    message = "\n".join(proof)
+    headers = {"X-Geo-Workbench-Principal": principal, "X-Geo-Platform-Token": token,
         "X-Geo-Workbench-Time": stamp, "X-Geo-Workbench-Signature": hmac.new(KEY.encode(), message.encode(), hashlib.sha256).hexdigest(),
         "X-Forwarded-Prefix": "/api/workbench/runtime", "X-Forwarded-Host": host, "X-Forwarded-Proto": "http"}
+    if platform_base: headers['X-Geo-Platform-Base'] = platform_base
+    return headers
 
 
 def setup():
@@ -95,6 +99,39 @@ def test_proxy_percent_encoded_paths_use_the_same_signature_bytes_as_node_gatewa
     asyncio.run(check())
 
 
+@pytest.mark.parametrize("principal", ["ruoyi:1", "ruoyi:123", "legacy-member"])
+def test_signed_namespaced_id_keeps_exact_workspace_identity(principal):
+    async def check():
+        gateway, calls, _, _ = setup()
+        path = "/api/workbench/platform-results/map"
+        headers = signed(path, principal, method="POST", host="127.0.0.1:3301")
+        platform_base = "http://127.0.0.1:3301"
+        headers["X-Geo-Platform-Base"] = platform_base
+        proof = "\n".join([headers["X-Geo-Workbench-Time"], "POST", path, principal,
+                            hashlib.sha256(b"member-a-private").hexdigest(), platform_base])
+        headers["X-Geo-Workbench-Signature"] = hmac.new(KEY.encode(), proof.encode(), hashlib.sha256).hexdigest()
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=gateway), base_url="http://testserver") as client:
+            response = await client.post(path, headers=headers, json={"execution_id": "existing-result"})
+            assert response.status_code == 200
+            assert response.json()["workspace"]["owner"] == principal
+            assert calls == [(principal, "member-a-private")]
+            headers["X-Geo-Workbench-Principal"] = "ruoyi:999"
+            assert (await client.post(path, headers=headers)).status_code == 403
+            assert len(calls) == 1
+    asyncio.run(check())
+
+
+@pytest.mark.parametrize("principal", ["ruoyi/1", "ruoyi:1\nadmin", "ruoyi:1 admin", "", "x" * 129])
+def test_invalid_principal_is_rejected_even_with_a_matching_signature(principal):
+    async def check():
+        gateway, calls, _, _ = setup()
+        path = "/api/session"
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=gateway), base_url="http://testserver") as client:
+            assert (await client.get(path, headers=signed(path, principal))).status_code == 403
+            assert not calls
+    asyncio.run(check())
+
+
 def test_local_client_needs_root_cookie_and_exact_linked_account_for_shared_workspace():
     async def check():
         gateway, calls, _, _ = setup()
@@ -111,6 +148,36 @@ def test_local_client_needs_root_cookie_and_exact_linked_account_for_shared_work
             assert response.json()["workspace"]["owner"] == "member-a"
             assert "member-a-private" not in response.text
     asyncio.run(check())
+
+
+def test_client_bookmark_after_restart_returns_to_root_without_disclosing_workspace():
+    async def check():
+        gateway, calls, _, _ = setup()
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=gateway), base_url='http://testserver') as client:
+            response = await client.get('/accounts/'+'a'*32+'/', follow_redirects=False)
+            assert response.status_code == 303 and response.headers['location'] == '/'
+            response = await client.get('/accounts/'+'a'*32+'/api/session')
+            assert response.status_code == 401 and response.json()['login_url'] == '/'
+            assert not calls
+    asyncio.run(check())
+
+
+def test_client_can_link_a_ruoyi_account_to_the_same_scoped_workspace(tmp_path):
+    from fastapi.testclient import TestClient
+    from geo_harness.app import create_app
+    app = create_app(tmp_path)
+    app.state.resource_nodes.credentials['platform'] = 'private-platform-session'
+    app.state.resource_nodes.transport = httpx.MockTransport(lambda request: httpx.Response(200, json={
+        'user': {'id': 'ruoyi:12', 'name': 'Member', 'scopes': ['workbench:run']}}))
+    with TestClient(app) as client:
+        client.get('/')
+        csrf = client.get('/api/session').json()['csrf']
+        response = client.post('/api/workbench/link-platform', json={'confirm': True}, headers={'X-Geo-CSRF': csrf})
+        assert response.status_code == 200, response.text
+        identity = hashlib.sha256(b'ruoyi:12').hexdigest()[:32]
+        assert identity in app.state.children
+        assert app.state.children[identity].state.resource_nodes.credentials['platform'] == 'private-platform-session'
+        assert 'private-platform-session' not in response.text
 
 
 def test_actual_signed_embedded_session_needs_no_local_cookie_and_does_not_inherit_root_credentials(tmp_path, monkeypatch):

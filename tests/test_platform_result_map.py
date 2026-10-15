@@ -81,20 +81,22 @@ def test_cached_import_still_obeys_platform_owner_denial(tmp_path):
  with pytest.raises(RegistrationError):run(results.import_platform_execution(CALL))
 
 
-def test_viewer_route_requires_scoped_identity_and_returns_same_origin_entry(tmp_path,monkeypatch):
+@pytest.mark.parametrize('principal', ['member-a', 'ruoyi:1'])
+def test_viewer_route_requires_scoped_identity_and_returns_same_origin_entry(tmp_path,monkeypatch,principal):
  monkeypatch.setenv('GEONEXUS_HARNESS_GATEWAY_KEY',KEY);app=create_app(tmp_path)
  def response(request):
   if request.url.path.startswith('/api/v1/geocards/'):return httpx.Response(200,json={'geocard':{'name':'图层'}})
   return httpx.Response(200,json={'id':CALL,'status':'succeeded','card_ref':'sample.data','node_ref':'node','result':{'outputs':{'preview':GEO,'artifacts':[]}}})
  async def check():
   async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),base_url='http://testserver') as client:
-   session=await client.get('/api/session',headers=signed('/api/session'));body=session.json()
+   def proof(path,method='GET'):return signed(path,principal,method=method,host='127.0.0.1:3301',platform_base='http://127.0.0.1:3301')
+   session=await client.get('/api/session',headers=proof('/api/session'));body=session.json()
    child=next(iter(app.state.children.values()));child.state.resource_nodes.transport=httpx.MockTransport(response)
-   path='/api/workbench/platform-results/map';headers={**signed(path,method='POST'),'X-Geo-CSRF':body['csrf'],'Origin':'http://127.0.0.1:9305'}
-   denied=await client.post(path,headers=signed(path,method='POST'),json={'execution_id':CALL,'enable_viewer':True});assert denied.status_code==403
+   path='/api/workbench/platform-results/map';headers={**proof(path,'POST'),'X-Geo-CSRF':body['csrf'],'Origin':'http://127.0.0.1:3301'}
+   denied=await client.post(path,headers=proof(path,'POST'),json={'execution_id':CALL,'enable_viewer':True});assert denied.status_code==403
    good=await client.post(path,headers=headers,json={'execution_id':CALL,'enable_viewer':True});assert good.status_code==200,good.text
    value=good.json();assert value['layers']==1 and value['execution_id']==CALL
-   assert value['viewer_entry'].startswith('http://127.0.0.1:9305/api/workbench/runtime/viewer/')
+   assert value['viewer_entry'].startswith('http://127.0.0.1:3301/api/workbench/runtime/viewer/')
    assert 'member-a-private' not in good.text
    assert child.state.products.installed[MAP_ID]['enabled']
  asyncio.run(check())

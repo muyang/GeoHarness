@@ -11,7 +11,7 @@ let toastTimer, settingsDirty = false;
 function toast(message) { $('toast').textContent = message; $('toast').style.display = 'block'; clearTimeout(toastTimer); toastTimer = setTimeout(() => $('toast').style.display = 'none', 7000); }
 async function api(path, body) {
   const response = await fetch(apiURL(path), {method: body === undefined ? 'GET' : 'POST', headers: body === undefined ? {} : {'Content-Type':'application/json','X-Geo-CSRF':csrf}, body: body === undefined ? undefined : JSON.stringify(body)});
-  const data = await response.json(); if (!response.ok) throw new Error(data.error || '请求失败'); return data;
+  const data = await response.json(); if (!response.ok) { if(data.login_required && new URLSearchParams(location.search).get('surface')==='client') location.assign(data.login_url || '/login'); throw new Error(data.error || '请求失败'); } return data;
 }
 async function action(button, fn) { button.disabled = true; try { await fn(); } catch(error) { toast(error.message); } finally { button.disabled = false; } }
 function resourcePane(name) {
@@ -50,6 +50,8 @@ function renderSettings() {
   $('provider-hint').textContent = providers.find(p=>p.id===config.provider)?.hint || '填写服务提供的准确模型 ID。';
   $('settings-scope').textContent = state.account?.scoped ? '此账号与 Platform 地图页及工作台共享同一份模型配置，密钥不会返回浏览器。' : '当前为本机独立设置；关联 Platform 账号后，在该账号的共享工作空间配置模型。';
   $('settings-account-panel').hidden = Boolean(state.account?.scoped);
+  $('account-name').textContent = state.account?.scoped ? (state.account.name || state.account.principal) : '本机设置';
+  $('account-logout').hidden = !state.account?.scoped || new URLSearchParams(location.search).get('surface')!=='client';
 }
 function localEntries() {
   return state.catalog.filter(p => !p.catalog_snapshot).map(p => {
@@ -267,7 +269,7 @@ function renderDetail() {
     if(resourceNeedsUpdate(item)) html='<p>节点契约已更新。请更新安装并重新确认权限，再使用新契约。</p>';
     else if(!installed?.enabled) html='<p>先安装资源并明确授权，再配置输入和执行。</p>';
     else if(item.local && !live.tool) html='<p>使用已安装产品原有的 MCP 或工具界面。</p><button id="open-existing-tool">打开资源工具</button>';
-    else if(!live.tool) html=live.executable&&item.source_id==='platform'?'<p>此内置 Demo 使用 Platform 工作流。</p><a href="http://127.0.0.1:9305/workbench" target="_blank" rel="noopener">打开 Platform 工作台 ↗</a>':'<p>已安装 GeoCard 目录快照。此资源尚无可调用工具，不能直接执行。</p>';
+    else if(!live.tool) html=live.executable&&item.source_id==='platform'?'<p>此内置 Demo 使用 Platform 工作流。</p><a href="'+esc(resourceNodes.find(n=>n.id==='platform')?.endpoint||'http://127.0.0.1:3301')+'/workbench" target="_blank" rel="noopener">打开 Platform 工作台 ↗</a>':'<p>已安装 GeoCard 目录快照。此资源尚无可调用工具，不能直接执行。</p>';
     else html=`<p>${live.synthetic?'当前工具使用合成输入。':'当前能力的数据来源和范围以契约为准。'}计算留在节点。</p><div id="resource-input-fields" class="field-grid"></div><details><summary>完整调用参数</summary><textarea id="resource-input-json" rows="6" class="code-input">{}</textarea></details><label class="checkbox spaced"><input id="resource-confirm" type="checkbox">确认使用当前参数调用已安装资源</label><div class="button-row"><button id="resource-run">运行资源</button><button id="resource-credential" class="secondary">配置节点凭据</button></div><p id="resource-run-status" role="status"></p><div id="resource-result-view"></div>`;
   }
   $('detail-content').innerHTML=html;if(detailTab==='预览与使用' && installed?.enabled){const history=document.createElement('div');history.id='detail-result-history';$('detail-content').append(history);renderProductHistory(item.id,history);}
@@ -336,3 +338,5 @@ document.querySelectorAll('[data-installed-filter]').forEach(b=>b.onclick=()=>{i
 window.addEventListener('message',event=>{if(event.source!==window.parent || event.origin!==location.origin || event.data?.source!=='geonexus-platform' || event.data?.type!=='prefillPrompt')return;const text=event.data.message;if(typeof text==='string' && text.length<=10000){$('prompt').value=text;page('workbench');}});
 
 for (const id of ['llm-enabled','provider','base-url','model','api-key','clear-key','temperature']) $(id).addEventListener('input',()=>{settingsDirty=true;$('connection-status').textContent='配置已修改，连接测试将使用当前填写值。';});
+
+$('account-logout').onclick = () => action($('account-logout'), async () => { const session = await (await fetch('/api/session')).json(); const response = await fetch('/api/account/logout', {method:'POST',headers:{'Content-Type':'application/json','X-Geo-CSRF':session.csrf},body:'{}'}); if(!response.ok) throw new Error('退出未完成，请重试。'); location.replace('/login'); });

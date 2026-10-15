@@ -67,3 +67,10 @@ geoharness-workspace/
 /index.html
 /vite.config.js
 /scripts/copy-cesium.mjs
+
+# Desktop packages are separate release artifacts, never source or credentials
+*.app/
+*.dmg
+*.whl
+/desktop/artifacts/
+/desktop/output/

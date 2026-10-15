@@ -43,13 +43,15 @@ from .runtime import Runtime
 from .workbench import Workbench, public_value
 from .gateway import WorkspaceGateway
 from .llm import PROVIDERS
+from .account import PlatformAccount
 
 
 def create_app(workspace: Path, *, _principal: str | None = None) -> FastAPI:
     workspace = workspace.resolve()
     workspace.mkdir(parents=True, exist_ok=True, mode=0o700)
+    require_login = os.environ.get('GEOHARNESS_REQUIRE_LOGIN') == '1'
     products = Products(workspace)
-    resource_nodes = ResourceNodes(workspace, products, platform_url=os.environ.get('GEONEXUS_PLATFORM_URL', 'http://127.0.0.1:9305'))
+    resource_nodes = ResourceNodes(workspace, products, platform_url=os.environ.get('GEONEXUS_PLATFORM_URL', 'http://127.0.0.1:3301'))
     seed_market(products.market)
     from importlib.util import find_spec
 
@@ -89,18 +91,6 @@ def create_app(workspace: Path, *, _principal: str | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app):
-        if _principal is None:
-            hint=read_json(workspace/'private-account-link.json',{})
-            if hint.get('principal') and resource_nodes.credentials.get('platform'):
-                for _ in range(30):
-                    try:
-                        me=await resource_nodes.request(resource_nodes.platform,'GET','/api/auth/me',authenticated=True)
-                        user=me.get('user',me);permissions=user.get('scopes',user.get('permissions',[]))
-                        if user.get('id')==hint['principal'] and (user.get('isAdmin') or '*' in permissions or 'workbench:run' in permissions):
-                            principal=user['id'];key=hashlib.sha256(principal.encode()).hexdigest()[:32]
-                            token=resource_nodes.credentials['platform'];association.update(principal=principal,key=key,token=token);scoped_application(principal,token)
-                        break
-                    except Exception:await asyncio.sleep(.2)
         yield
         await workbench.close()
         for child in app.state.children.values():
@@ -125,7 +115,9 @@ def create_app(workspace: Path, *, _principal: str | None = None) -> FastAPI:
 
     @app.exception_handler(RegistrationError)
     async def error_handler(request, error):
-        return JSONResponse({"error": str(error)}, status_code=400)
+        status = getattr(error, 'status', 400)
+        status = status if status in {401, 403} else 400
+        return JSONResponse({"error": str(error), **({'login_required': True} if status == 401 else {})}, status_code=status)
 
     @app.exception_handler(ValueError)
     async def value_handler(request, error):
@@ -141,6 +133,11 @@ def create_app(workspace: Path, *, _principal: str | None = None) -> FastAPI:
         if route_path.startswith("/api/"):
             if not request.scope.get('geo_gateway_verified') and request.cookies.get(session_cookie) != session_id:
                 return JSONResponse({"error": "请先打开客户端页面。"}, status_code=401)
+            if require_login and _principal is None and route_path not in {
+                '/api/session', '/api/account/status', '/api/account/login', '/api/account/logout',
+                '/api/resource-nodes/platform/login', '/api/workbench/link-platform',
+            }:
+                return JSONResponse({'error': '请登录并进入对应账号工作台。', 'login_required': True}, status_code=401)
             if request.method not in {"GET", "HEAD", "OPTIONS"}:
                 origin = request.headers.get("origin")
                 expected = request.url.scheme + '://' + request.url.netloc
@@ -164,10 +161,29 @@ def create_app(workspace: Path, *, _principal: str | None = None) -> FastAPI:
             response.headers["Cache-Control"] = "private, max-age=31536000, immutable"
         return response
 
+    @app.get('/health')
+    async def health():
+        return {'status': 'ok', 'service': 'geoharness', 'version': __version__}
+
     @app.get("/")
     async def index():
-        response = RedirectResponse('/accounts/'+association['key']+'/?surface=client#workbench',status_code=302) if _principal is None and association.get('key') else FileResponse(ui / "index.html")
+        if _principal is None:
+            if resource_nodes.credentials.get('platform'):
+                try:
+                    await validate_local_account()
+                except RegistrationError:
+                    association.clear()
+            response = (RedirectResponse('/accounts/'+association['key']+'/?surface=client#workbench',status_code=302)
+                        if association.get('key') else FileResponse(ui / 'login.html'))
+        else:
+            response = FileResponse(ui / 'index.html')
         response.set_cookie(session_cookie, session_id, httponly=True, samesite="strict")
+        return response
+
+    @app.get('/login')
+    async def login_page():
+        response = FileResponse(ui / 'login.html')
+        response.set_cookie(session_cookie, session_id, httponly=True, samesite='strict')
         return response
 
     app.mount("/ui", StaticFiles(directory=ui), name="ui")
@@ -224,7 +240,7 @@ def create_app(workspace: Path, *, _principal: str | None = None) -> FastAPI:
             "plugins": plugins.status(),
             "resource_nodes": resource_nodes.public(),
             "resource_results": results.list(),
-            "account": {'principal': _principal, 'scoped': _principal is not None},
+            "account": {'principal': _principal, 'scoped': _principal is not None, 'name': getattr(app.state, 'account_name', _principal)},
         }
 
     @app.get("/api/products")
@@ -249,21 +265,13 @@ def create_app(workspace: Path, *, _principal: str | None = None) -> FastAPI:
         if _principal is not None and identity == 'platform' and action in {'login', 'credential'}:
             raise RegistrationError('共享工作台的 Platform 身份由已验证会话固定，请在平台或客户端主入口切换账号。')
         if identity == "platform" and action == "login":
-            result = await resource_nodes.request(
-                resource_nodes.platform,
-                "POST",
-                "/api/auth/login",
-                body={
-                    "email": str(body.get("email", "")),
-                    "password": str(body.get("password", "")),
-                },
-            )
-            token = result.get("token")
-            if not isinstance(token, str) or not token:
-                raise RegistrationError("Platform 未返回有效登录凭据。")
-            resource_nodes.credential("platform", {"token": token})
-            return {"authenticated": True, "expires_at": result.get("expiresAt")}
+            result = await account.login(body)
+            association.clear()
+            return result
         if action == "credential":
+            if identity == 'platform' and account:
+                account.clear()
+                association.clear()
             return resource_nodes.credential(identity, body)
         return resource_nodes.change(identity, action, body)
 
@@ -300,6 +308,8 @@ def create_app(workspace: Path, *, _principal: str | None = None) -> FastAPI:
 
     @app.get('/api/session')
     async def model_session():
+        if require_login and _principal is None:
+            return {'csrf': csrf, 'account': {'principal': None, 'scoped': False}}
         return {'csrf': csrf, 'settings': settings.public(), 'providers': PROVIDERS,
                 'account': {'principal': _principal, 'scoped': _principal is not None}}
 
@@ -1053,6 +1063,8 @@ def create_app(workspace: Path, *, _principal: str | None = None) -> FastAPI:
     workbench = Workbench(workspace, products, resource_nodes, results, settings, invoke_product)
     app.state.workbench = workbench
     association = {}
+    account = PlatformAccount(workspace, resource_nodes) if _principal is None else None
+    resource_nodes.platform_session = account
 
     def scoped_application(principal, token):
         key = hashlib.sha256(principal.encode()).hexdigest()[:32]
@@ -1060,7 +1072,38 @@ def create_app(workspace: Path, *, _principal: str | None = None) -> FastAPI:
             app.state.children[key] = create_app(workspace / 'principals' / key, _principal=principal)
         child = app.state.children[key]
         child.state.resource_nodes.credential('platform', {'token': token})
+        if association.get('principal') == principal:
+            child.state.account_name = association.get('name', principal)
         return child
+
+    async def validate_local_account():
+        user = await account.ensure()
+        principal = user['id']
+        association.update(principal=principal, key=hashlib.sha256(principal.encode()).hexdigest()[:32],
+                           token=resource_nodes.credentials['platform'], name=user.get('name', user.get('email', principal)))
+        return user
+
+    @app.get('/api/account/status')
+    async def account_status():
+        return {'platform_url': resource_nodes.platform['endpoint'], 'scoped': _principal is not None}
+
+    @app.post('/api/account/login')
+    async def account_login(request: Request):
+        if account is None:
+            raise RegistrationError('请在客户端主入口切换账号。')
+        body = await request.json()
+        await account.login(body)
+        association.clear()
+        return await associate(body)
+
+    @app.post('/api/account/logout')
+    async def account_logout():
+        if account is None:
+            raise RegistrationError('请在客户端主入口退出账号。')
+        # Clear only this client's session; Platform's browser session is independent.
+        account.clear()
+        association.clear()
+        return {'logged_out': True, 'login_url': '/login'}
 
     @app.post('/api/workbench/link-platform')
     async def link_platform(request: Request):
@@ -1069,14 +1112,11 @@ def create_app(workspace: Path, *, _principal: str | None = None) -> FastAPI:
         body = await request.json()
         if not body.get('confirm'):
             raise RegistrationError('请确认关联当前登录账号的共享工作空间。')
-        me = await resource_nodes.request(resource_nodes.platform, 'GET', '/api/auth/me', authenticated=True)
-        user = me.get('user', me)
-        principal = str(user.get('id', ''))
-        if not re.fullmatch(r'[A-Za-z0-9_.@-]{1,128}', principal):
-            raise RegistrationError('Platform 没有返回有效账号身份。')
-        permissions = user.get('scopes', user.get('permissions', me.get('permissions', [])))
-        if 'workbench:run' not in permissions and '*' not in permissions and not user.get('isAdmin'):
-            raise RegistrationError('当前账号没有工作台运行权限。')
+        return await associate(body)
+
+    async def associate(body):
+        user = await validate_local_account()
+        principal = user['id']
         key = hashlib.sha256(principal.encode()).hexdigest()[:32]
         token = resource_nodes.credentials.get('platform')
         association.update(principal=principal, key=key, token=token)
@@ -1093,8 +1133,12 @@ def create_app(workspace: Path, *, _principal: str | None = None) -> FastAPI:
 
     @app.get('/api/workbench/project')
     async def map_project(request: Request):
-        results.viewer()
-        return JSONResponse(workbench.project(str(request.base_url).rstrip('/')))
+        project = workbench.project(str(request.base_url).rstrip('/'))
+        # A new account can open the base map before installing any products.
+        # Reading private artifact layers still requires the viewer permission.
+        if project.get('layers'):
+            results.viewer()
+        return JSONResponse(project)
 
     @app.post('/api/workbench/map/sync')
     async def map_sync(request: Request):
@@ -1241,17 +1285,20 @@ def create_app(workspace: Path, *, _principal: str | None = None) -> FastAPI:
         return StreamingResponse(stream(), media_type='application/x-ndjson', headers={'X-Accel-Buffering': 'no'})
 
     if _principal is None:
-        app.add_middleware(WorkspaceGateway, key=os.environ.get('GEONEXUS_HARNESS_GATEWAY_KEY', ''), factory=scoped_application, local_account=lambda: association, root_cookie=(session_cookie, session_id))
+        app.add_middleware(WorkspaceGateway, key=os.environ.get('GEONEXUS_HARNESS_GATEWAY_KEY', ''), factory=scoped_application, local_account=lambda: association, root_cookie=(session_cookie, session_id), local_validate=validate_local_account)
     return app
 
 
 def main():
     parser = argparse.ArgumentParser(description="Independent local Geo client")
     parser.add_argument("--workspace", type=Path, default=Path("geoharness-workspace"))
-    parser.add_argument("--port", type=int, default=8808)
+    parser.add_argument("--port", type=int, default=8810)
+    parser.add_argument('--require-login', action='store_true', help='Use Platform account workspaces; disable legacy unscoped APIs')
     args = parser.parse_args()
     import uvicorn
 
+    if args.require_login:
+        os.environ['GEOHARNESS_REQUIRE_LOGIN'] = '1'
     uvicorn.run(create_app(args.workspace), host="127.0.0.1", port=args.port)
 
 

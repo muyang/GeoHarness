@@ -78,7 +78,7 @@ def test_request_context_keeps_two_platform_tokens_and_origins_isolated(tmp_path
  async def check():await asyncio.gather(one('http://127.0.0.1:9305','token-9305'),one('http://127.0.0.1:9316','token-9316'))
  asyncio.run(check())
  assert set(seen)=={('http://127.0.0.1:9305/api/auth/me','Bearer token-9305'),('http://127.0.0.1:9316/api/auth/me','Bearer token-9316')}
- assert n.platform['endpoint']=='http://127.0.0.1:9305'
+ assert n.platform['endpoint']=='http://127.0.0.1:3301'
 
 
 def test_signed_origin_cannot_be_replaced_and_is_applied_only_to_authenticated_request(tmp_path,monkeypatch):

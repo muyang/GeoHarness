@@ -52,9 +52,15 @@ def endpoint(value):
     return value
 
 
+class NodeHTTPError(RegistrationError):
+    def __init__(self, message, status):
+        super().__init__(message)
+        self.status = status
+
+
 class ResourceNodes:
     def __init__(
-        self, workspace: Path, products, platform_url="http://127.0.0.1:9305", transport=None
+        self, workspace: Path, products, platform_url="http://127.0.0.1:3301", transport=None
     ):
         self.products, self.transport = products, transport
         self.path = workspace / "resource-nodes.json"
@@ -70,6 +76,7 @@ class ResourceNodes:
             "protected": True,
         }
         self.observations, self.entries, self.discoveries = {}, {}, {}
+        self.platform_session = None
 
     @property
     def platform(self):
@@ -119,7 +126,9 @@ class ResourceNodes:
             except OSError as exc:
                 raise RegistrationError("无法解析节点地址。") from exc
 
-    async def request(self, node, method, path, *, body=None, authenticated=False):
+    async def request(self, node, method, path, *, body=None, authenticated=False, _session=True):
+        if authenticated and node['id'] == 'platform' and _session and self.platform_session and self.credential_value('platform') and not self._request_platform.get():
+            await self.platform_session.ensure()
         target = node["endpoint"] + path
         await self.check_address(target)
         headers = {"Accept-Encoding": "identity"}
@@ -136,9 +145,10 @@ class ResourceNodes:
                 client.stream(method, target, json=body, headers=headers) as response,
             ):
                 if response.status_code in {401, 403}:
-                    raise RegistrationError(
-                        "节点要求身份或权限；请配置此节点凭据，或在 Platform 检查调用授权。"
-                    )
+                    message = ('Platform 登录未通过，请检查用户名、密码或账号状态。' if path == '/api/auth/login'
+                               else 'Platform 会话已过期，请重新登录客户端。' if node['id'] == 'platform' and response.status_code == 401
+                               else '节点要求身份或权限；请配置此节点凭据，或在 Platform 检查调用授权。')
+                    raise NodeHTTPError(message, response.status_code)
                 response.raise_for_status()
                 parts, size = [], 0
                 async for chunk in response.aiter_bytes():
@@ -147,8 +157,14 @@ class ResourceNodes:
                         raise RegistrationError("节点返回超过 4 MiB，已停止读取。")
                     parts.append(chunk)
                 return json.loads(b"".join(parts))
-        except (httpx.HTTPError, ValueError) as exc:
-            raise RegistrationError("节点接口不可用或未返回有效 JSON；未执行安装或计算。") from exc
+        except RegistrationError:
+            raise
+        except httpx.HTTPStatusError as exc:
+            raise NodeHTTPError(f"{node['name']} 接口返回 HTTP {exc.response.status_code}；请检查服务入口与版本。", exc.response.status_code) from exc
+        except httpx.RequestError as exc:
+            raise RegistrationError(f"无法连接 {node['name']}（{node['endpoint']}），请确认统一服务已启动。") from exc
+        except ValueError as exc:
+            raise RegistrationError(f"{node['name']} 未返回有效 JSON，请检查是否误填了门户页面地址。") from exc
 
     async def read_catalog(self, node):
         if node["protocol"] == "platform":
