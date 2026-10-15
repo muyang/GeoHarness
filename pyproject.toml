@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "geoharness-client"
-version = "0.2.0"
+version = "0.2.2"
 description = "Independent GeoCard product host, MCP client and configurable LLM workbench"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -24,7 +24,7 @@ where = ["src"]
 include = ["geo_harness*"]
 
 [tool.setuptools.package-data]
-geo_harness = ["ui/*"]
+geo_harness = ["ui/*", "ui/geo-viewer/*"]
 
 [tool.ruff]
 line-length = 100

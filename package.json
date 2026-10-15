@@ -1,7 +1,7 @@
 {
   "name": "geoharness",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.2.2",
   "description": "GeoHarness：GeoNexus 轻客户端。连节点、跑技能、上图、会话；渲染器与能力皆插件。",
   "type": "module",
   "engines": {

@@ -8,13 +8,18 @@ const wbLabels={input:'输入图层',input1:'第一输入',input2:'第二输入'
 const wbEndpoint=path=>apiURL('workbench/'+path);
 const wbOrigin=()=>new URL(wbFrame.src || location.href).origin;
 
-function viewerCommand(command){
-  return new Promise((resolve,reject)=>{
-    if(!wbReady || !wbFrame.contentWindow)return reject(new Error('GeoLibre 正在加载，请稍后重试。'));
-    const id=crypto.randomUUID(),timer=setTimeout(()=>{wbPending.delete(id);reject(new Error('查看器尚未确认地图操作。'));},15000);
-    wbPending.set(id,{resolve,reject,timer});
-    wbFrame.contentWindow.postMessage({v:2,source:'geoharness',type:command.type,payload:command.payload||{},requestId:id},wbOrigin());
-  });
+function nativeCommand(method,params={}){
+ return new Promise((resolve,reject)=>{if(!wbReady||!wbFrame.contentWindow)return reject(new Error('GeoLibre 正在加载，请稍后重试。'));const id=crypto.randomUUID(),timer=setTimeout(()=>{wbPending.delete(id);reject(new Error('查看器尚未确认地图操作。'));},30000);wbPending.set(id,{resolve,reject,timer});wbFrame.contentWindow.postMessage({type:'geolibre:command',method,params,requestId:id},wbOrigin());});
+}
+async function viewerCommand(command){
+ const params=command.payload||{};
+ if(command.type==='loadProject'){
+  const url=new URL(params.url,location.origin);if(url.origin!==location.origin||!url.pathname.startsWith('/api/')&&!url.pathname.startsWith('/accounts/'))throw new Error('项目地址须来自当前账号接口');
+  const response=await fetch(url.href);if(!response.ok)throw new Error('项目读取失败（'+response.status+'）');const project=await response.json(),seq=++wbProjectSeq;
+  return new Promise((resolve,reject)=>{const timer=setTimeout(()=>{wbPending.delete(seq);reject(new Error('GeoLibre 项目加载等待超时'));},30000);wbPending.set(seq,{resolve,reject,timer,project:true});wbFrame.contentWindow.postMessage({type:'geolibre:load-project',project,seq,trustedWidget:true},wbOrigin());wbFrame.contentWindow.postMessage({type:'geolibre:request-state'},wbOrigin());});
+ }
+ if(command.type==='setView'&&params.bbox)return nativeCommand('fitBounds',{bounds:params.bbox});
+ return nativeCommand(({getViewport:'getView',setLayerVisibility:'setVisibility'})[command.type]||command.type,params);
 }
 function normalizeViewerViewport(viewport){
   const view={...viewport},longitude=n=>n>=-180&&n<=180?n:((n+180)%360+360)%360-180,latitude=n=>Math.max(-90,Math.min(90,n));
@@ -32,19 +37,18 @@ async function mapSync(viewport){
 }
 window.addEventListener('message',event=>{
   if(event.source!==wbFrame.contentWindow||event.origin!==wbOrigin())return;
-  const data=event.data;if(!data||data.source!=='geolibre'||![1,2].includes(data.v))return;
-  const p=data.payload||{};
-  if(data.type==='ack'){
-    const pending=wbPending.get(p.requestId);if(!pending)return;
-    clearTimeout(pending.timer);wbPending.delete(p.requestId);p.ok?pending.resolve(p.result):pending.reject(new Error(p.error||'地图动作未完成。'));
-  }else if(data.type==='ready'&&!wbReady){
-    wbReady=true;$('wb-map-status').textContent='正在恢复共享地图…';
-    viewerCommand({type:'loadProject',payload:{url:location.origin+wbEndpoint('project')}}).then(()=>mapSync()).catch(e=>{$('wb-map-status').textContent=e.message;});
-  }
-  else if(data.type==='viewChanged')mapSync(p);
-  else if(data.type==='projectLoaded')mapSync();
-  else if(data.type==='selectionChanged')api('workbench/map/sync',{selection:p}).then(context=>{wbContext=context;renderMapContext();}).catch(e=>toast(e.message));
+  const data=event.data;if(!data||typeof data!=='object')return;
+  if(data.type==='geolibre:result'){
+   const pending=wbPending.get(data.requestId);if(!pending)return;clearTimeout(pending.timer);wbPending.delete(data.requestId);data.ok?pending.resolve(data.value):pending.reject(new Error(data.error||'地图动作未完成。'));
+  }else if(data.type==='geolibre:ready'&&!wbReady){
+   wbReady=true;$('wb-map-status').textContent='正在恢复共享地图…';viewerCommand({type:'loadProject',payload:{url:location.origin+wbEndpoint('project')}}).then(()=>mapSync()).catch(e=>{$('wb-map-status').textContent=e.message;});
+  }else if(data.type==='geolibre:state'){
+   const pending=wbPending.get(data.seq);if(pending){clearTimeout(pending.timer);wbPending.delete(data.seq);pending.resolve(data.project);}clearTimeout(wbSyncTimer);wbSyncTimer=setTimeout(()=>mapSync(),300);
+  }else if(data.type==='geolibre:error'){
+   for(const [id,p]of wbPending)if(p.project){clearTimeout(p.timer);wbPending.delete(id);p.reject(new Error(data.message));}
+  }else if(data.type==='geolibre:event'&&data.event==='selection-change')api('workbench/map/sync',{selection:data.payload}).then(context=>{wbContext=context;renderMapContext();}).catch(e=>toast(e.message));
 });
+let wbSyncTimer,wbProjectSeq=0;
 function renderMapContext(){
   if(!wbContext)return;$('wb-context').textContent=JSON.stringify(wbContext,null,2);
   $('wb-layers').innerHTML=wbContext.layers.map(layer=>`<label class="wb-layer"><input type="checkbox" data-layer="${esc(layer.id)}" ${layer.visible?'checked':''}><span>${esc(layer.name)}</span><small>${esc(layer.type)}</small></label>`).join('')||'<span class="muted">运行案例或工具后，成果图层会出现在这里。</span>';
@@ -215,7 +219,7 @@ if(new URLSearchParams(location.search).get('theme')==='dark')document.body.clas
 const wbInitialize=setInterval(()=>{if(!state||!csrf)return;clearInterval(wbInitialize);
   $('wb-account').textContent=state.account?.scoped?'当前账号的独立共享工作空间':'本机工作空间 · 关联 Platform 后，两种入口共享同一账号的地图与案例';$('wb-link-account').hidden=Boolean(state.account?.scoped);
   if(state.account?.scoped){$('platform-signin').disabled=true;$('platform-signin-status').textContent='身份由当前共享会话固定；请在主入口切换账号。';}
-  wbFrame.src=BASE+'viewer/?layout=viewer&embed=1&lang=zh';
+  wbFrame.src=location.pathname.startsWith('/api/workbench/runtime/') && new URLSearchParams(location.search).get('surface')==='platform' ? '/map/viewer?surface=workbench' : BASE+'ui/geo-viewer/index.html?maponly=1&embed=1&lang=zh';
   refreshWorkbench().then(()=>refreshConversations(true)).catch(e=>toast(e.message));
   setInterval(()=>{if(wbJobs.some(j=>['running','queued'].includes(j.status)))refreshJobs().catch(e=>toast(e.message));if(wbPlanRows.some(p=>['running','queued'].includes(p.status)))refreshPlans().catch(e=>toast(e.message));},1500);
 },100);

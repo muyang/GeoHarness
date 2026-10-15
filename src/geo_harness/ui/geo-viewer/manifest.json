@@ -1,0 +1,16 @@
+{
+  "geolibre_version": "3.3.0",
+  "upstream_module": "maplibre-raster-CRiHmdjX.js",
+  "upstream_sha256": "f4bd9da339f5d11876b0cef617cc73494b1ce7a64c7e8b2d016fd0bae18cf8eb",
+  "adapter_module": "raster-engine-861c3df62b5e.js",
+  "adapter_sha256": "861c3df62b5ec757ebc64d5038b55fdbb5b0e2966548cf8fceee4b5a15dc4ece",
+  "default_raster_engine": "maplibre-gl-raster",
+  "changes": [
+    "Change the default engine to the existing compatible renderer",
+    "Resolve dependencies against the original official asset directory"
+  ],
+  "native_assets": "/viewer",
+  "license": "MIT",
+  "upstream": "https://github.com/opengeos/GeoLibre",
+  "upgrade_policy": "Regenerate and review for an exact supported upstream version; never silently patch a different version."
+}

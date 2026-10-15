@@ -1,8 +1,12 @@
-# GeoHarness v0.2
+# GeoHarness v0.2.2
 
 GeoNexus 的独立地理工作台。当前共享运行时使用 Python 服务与静态 Web UI，Platform 通过认证网关嵌入同一运行时；客户端和平台关联账号后，共享模型配置、对话、地图、执行记录与案例。
 
-版本标签为 `v0.2`，Python 包版本为 `0.2.0`。GIS 计算由 GeoNode 完成；GeoHarness 负责资源发现、安装、配置、交互与任务编排，兼容官方 MCP。
+本次提交版本为 `v0.2.2`，Python 包与客户端版本均为 `0.2.2`。GIS 计算由 GeoNode 完成；GeoHarness 负责资源发现、安装、配置、交互与任务编排，兼容官方 MCP。
+
+## v0.2.2 更新
+
+本版将查看器通信改为 GeoLibre 3.3.0 官方 Widget 协议，按窗口、同源、requestId 与项目 seq 校验实际完成状态。嵌入 Platform 时加载平台共享 `/map/viewer` 组件；独立客户端继续使用官方 GeoLibre 查看器。地图范围参数遵循 `[west, south, east, north]`，保持既有模型、任务与案例接口。使用固定依赖和带哈希的查看器适配资源。
 
 ## 本版能力
 
@@ -74,3 +78,12 @@ npm test
 实际 API Key、网关密钥、节点会话、运行数据库、私有 workspace 和用户文件不随本仓库发布。凭据文件采用本机私有文件权限，尚未集成系统钥匙串或静态加密。
 
 产品安装校验清单、摘要、权限和锁定依赖；不会执行市场包中的任意 Python/JS 脚本。远端市场签名、生产多租户、多机调度与 DeepSeek Harness 适配仍待后续实现。
+
+
+默认地图加载 GeoLibre 3.3.0 的官方资源，并使用 `src/geo_harness/ui/geo-viewer` 中带 MIT 许可与哈希清单的轻量适配器，默认选择 `maplibre-gl-raster`，修复投影 GeoTIFF 首次预览空白。平台与客户端由 Platform 的 `tools/build-geolibre-viewer.py` 同时生成适配文件；升级 GeoLibre 前需重新审核。已安装的官方包、MCP 与 Widget 接口保持原样。
+
+## 与 RuoYi 控制面的验证
+
+本版与 Platform 的官方RuoYi/PostgreSQL统一身份、GeoNode控制面联调。Platform是节点登记、启停和授权的唯一管理入口；客户端从平台公共目录读取已发布能力，运行前由SDK重新核验节点状态与授权。独立客户端和嵌入式工作台使用同一运行时。审核入口在本机为Platform `http://127.0.0.1:19315/`、GeoHarness `http://127.0.0.1:18816/`，端口以部署配置和启动器输出为准。
+
+本地节点联调20项及重启后10项通过，包含目录/授权保留、执行审计幂等、共享工作台进入与退出撤销。完整生产多租户、负载与灾备验收尚未完成。更新客户端版本不升级GeoCard、产品manifest或插件自身的独立版本。

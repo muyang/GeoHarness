@@ -25,6 +25,7 @@ from geonexus.registration import (
 )
 from geonexus.registry.server import RegistryServer
 
+from . import __version__
 from .core import (
     MCPConnection,
     Products,
@@ -109,7 +110,7 @@ def create_app(workspace: Path, *, _principal: str | None = None) -> FastAPI:
         await plugins.close()
         await runtime.close()
 
-    app = FastAPI(title="Geo Harness", lifespan=lifespan)
+    app = FastAPI(title="Geo Harness", version=__version__, lifespan=lifespan)
     app.state.runtime, app.state.products, app.state.settings = (
         runtime,
         products,
@@ -219,7 +220,7 @@ def create_app(workspace: Path, *, _principal: str | None = None) -> FastAPI:
             },
             "cards": cards(),
             "runs": list(reversed(runtime.runs.values())),
-            "version": "0.2.0",
+            "version": __version__,
             "plugins": plugins.status(),
             "resource_nodes": resource_nodes.public(),
             "resource_results": results.list(),
