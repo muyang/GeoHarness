@@ -1,28 +1,15 @@
 {
-  "name": "geoharness",
+  "name": "geoharness-ui-tests",
   "private": true,
   "version": "0.2.2",
-  "description": "GeoHarness：GeoNexus 轻客户端。连节点、跑技能、上图、会话；渲染器与能力皆插件。",
-  "type": "module",
-  "engines": {
-    "node": ">=20"
-  },
+  "description": "Browser regression tests for the shared Python/static GeoHarness runtime",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview",
-    "test": "node --test test/*.test.mjs",
-    "predev": "node scripts/copy-cesium.mjs || true",
-    "prebuild": "node scripts/copy-cesium.mjs || true"
+    "test": "node --test tests/*.cjs"
   },
-  "dependencies": {
-    "cesium": "^1.145.0",
-    "maplibre-gl": "^4.7.1",
-    "vue": "^3.5.13"
+  "engines": {
+    "node": ">=22.12.0"
   },
   "devDependencies": {
-    "@vitejs/plugin-vue": "^5.2.1",
-    "jsdom": "25.0.1",
-    "vite": "^5.4.11"
+    "jsdom": "25.0.1"
   }
 }

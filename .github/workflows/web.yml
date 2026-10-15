@@ -1,16 +1,15 @@
-name: GeoHarness (web)
-
+name: GeoHarness shared UI
 on:
   push:
-    branches: ['**']
   pull_request:
-
+permissions:
+  contents: read
 jobs:
-  build:
+  browser-tests:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        node-version: ['20', '22']
+        node-version: ['22', '24']
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -18,7 +17,14 @@ jobs:
           node-version: ${{ matrix.node-version }}
           cache: npm
       - run: npm ci
-      - name: Unit tests (node --test)
-        run: npm test
-      - name: Build
-        run: npm run build
+      - run: npm audit --audit-level=high
+      - run: npm test
+  python-package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: python -m pip install build
+      - run: python -m compileall -q src/geo_harness
+      - run: python -m build --wheel

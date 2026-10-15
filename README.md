@@ -17,7 +17,7 @@ GeoNexus 的独立地理工作台。当前共享运行时使用 Python 服务与
 - **GeoLibre 默认地图**：同源查看真实 GeoJSON、STAC 足迹与 GeoTIFF 像元，支持定位、图层动作、字段/选择摘要与撤销。
 - **完整案例卡**：保存产品摘要、参数、依赖、来源、科学限制与产物哈希；锁定产品版本后复跑完整步骤。
 
-仓库还保留原有 Vue 前端源码、测试与截图，其使用说明见 [README-v0.1.md](README-v0.1.md)。共享工作台使用下面的 Python 入口。
+旧版 Vue 客户端已从当前代码中移除，可通过 Git 历史查看；当前唯一客户端入口为下方 Python 服务及 `src/geo_harness/ui/` 静态界面。`package.json` 仅为共享界面浏览器回归测试安装 jsdom。
 
 ## 安装与启动
 
@@ -61,13 +61,11 @@ GeoLibre Viewer 使用 3.3.0；GeoNode WASI 算子执行器独立使用其审核
 | `src/geo_harness/ui/` | 当前工作台静态 Web UI |
 | `demo-products/` | 公开合成产品声明、案例与测试权重 |
 | `tests/` | Python、地图确认与安全渲染回归 |
-| `src/lib/`、`src/components/`、`test/` | 保留的 Vue 前端及原有测试 |
+| `package.json`、`package-lock.json` | 静态工作台浏览器测试依赖，非第二套客户端 |
 
 ```sh
 .venv/bin/python -m pytest tests -q
 npm ci
-node --test tests/test_map_viewport.cjs tests/test_dialogue_render.cjs
-# 保留的 Vue 客户端测试
 npm test
 ```
 
@@ -87,3 +85,7 @@ npm test
 本版与 Platform 的官方RuoYi/PostgreSQL统一身份、GeoNode控制面联调。Platform是节点登记、启停和授权的唯一管理入口；客户端从平台公共目录读取已发布能力，运行前由SDK重新核验节点状态与授权。独立客户端和嵌入式工作台使用同一运行时。审核入口在本机为Platform `http://127.0.0.1:19315/`、GeoHarness `http://127.0.0.1:18816/`，端口以部署配置和启动器输出为准。
 
 本地节点联调20项及重启后10项通过，包含目录/授权保留、执行审计幂等、共享工作台进入与退出撤销。完整生产多租户、负载与灾备验收尚未完成。更新客户端版本不升级GeoCard、产品manifest或插件自身的独立版本。
+
+## 2026-10-15 main 维护
+
+当前 main 已清理旧版 Vue 客户端及其 Cesium/MapLibre/Vite 依赖链，统一保留 Python 服务与静态界面。版本仍为0.2.2，已发布的 v0.2.2 标签位置保持不变；本次维护应使用 main 的具体提交与重新生成的 wheel 哈希。测试清单现在直接覆盖当前地图协议和对话渲染，CI 检查依赖高危告警并构建 Python wheel。生成物、依赖、数据库、密钥和私有 workspace 由统一忽略规则排除。
