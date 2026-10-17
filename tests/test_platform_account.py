@@ -174,3 +174,30 @@ def test_platform_diagnostics_distinguish_wrong_route_and_html_portal(tmp_path, 
         with pytest.raises(Exception, match=message):
             await nodes.request(nodes.platform, 'GET', '/api/auth/me')
     asyncio.run(check())
+
+
+def test_demo_login_uses_platform_profiles_and_does_not_store_or_return_passwords(tmp_path):
+    app = create_app(tmp_path)
+    peer = Identity()
+    requests = []
+    def transport(request):
+        requests.append(request)
+        if request.url.path == '/api/demo/accounts':
+            return httpx.Response(200, json={'enabled': True, 'accounts': [{'id': 'registered', 'label': '普通注册用户', 'username': 'demo'}]})
+        if request.url.path == '/api/demo/login':
+            assert json.loads(request.content) == {'account': 'registered'}
+            peer.token = 'demo-access'
+            return httpx.Response(200, json={'token': peer.token, 'refresh_token': 'private-refresh', 'user': peer.user})
+        return peer(request)
+    app.state.resource_nodes.transport = httpx.MockTransport(transport)
+    with TestClient(app) as client:
+        client.get('/login')
+        csrf = client.get('/api/session').json()['csrf']
+        assert client.get('/api/account/demo-accounts').json()['accounts'][0]['id'] == 'registered'
+        assert client.post('/api/account/demo-login', json={'account': 'registered'}).status_code == 403
+        result = client.post('/api/account/demo-login', headers={'X-Geo-CSRF': csrf}, json={'account': 'registered', 'endpoint': 'https://untrusted.example'})
+        assert result.status_code == 200, result.text
+        assert 'demo-access' not in result.text and 'private-refresh' not in result.text
+        assert result.json()['workspace_url'].startswith('/accounts/')
+        assert all(request.url.host == '127.0.0.1' for request in requests)
+        assert client.post('/api/account/demo-login', headers={'X-Geo-CSRF': csrf}, json={'account': '../../admin'}).status_code == 400

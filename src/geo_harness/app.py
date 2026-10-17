@@ -135,6 +135,7 @@ def create_app(workspace: Path, *, _principal: str | None = None) -> FastAPI:
                 return JSONResponse({"error": "请先打开客户端页面。"}, status_code=401)
             if require_login and _principal is None and route_path not in {
                 '/api/session', '/api/account/status', '/api/account/login', '/api/account/logout',
+                '/api/account/demo-accounts', '/api/account/demo-login',
                 '/api/resource-nodes/platform/login', '/api/workbench/link-platform',
             }:
                 return JSONResponse({'error': '请登录并进入对应账号工作台。', 'login_required': True}, status_code=401)
@@ -237,6 +238,7 @@ def create_app(workspace: Path, *, _principal: str | None = None) -> FastAPI:
             "cards": cards(),
             "runs": list(reversed(runtime.runs.values())),
             "version": __version__,
+            "platform_url": resource_nodes.platform['endpoint'],
             "plugins": plugins.status(),
             "resource_nodes": resource_nodes.public(),
             "resource_results": results.list(),
@@ -575,7 +577,8 @@ def create_app(workspace: Path, *, _principal: str | None = None) -> FastAPI:
         if binding.get("transport") == "resource-node":
             if body.get("tool") not in {None, binding.get("tool")}:
                 raise RegistrationError("工具与安装的资源绑定不一致。")
-            return await resource_nodes.invoke(binding, body.get("arguments", {}))
+            arguments, _ = workbench.internal_arguments(product_id, body.get("arguments", {}))
+            return await resource_nodes.invoke(binding, arguments)
         conn, binding = await resource_connection(product_id)
         try:
             permitted = binding.get("tools", [binding.get("tool")])
@@ -1095,6 +1098,23 @@ def create_app(workspace: Path, *, _principal: str | None = None) -> FastAPI:
         await account.login(body)
         association.clear()
         return await associate(body)
+
+    @app.get('/api/account/demo-accounts')
+    async def demo_accounts():
+        if account is None:
+            return {'enabled': False, 'accounts': []}
+        return await account.demo_profiles()
+
+    @app.post('/api/account/demo-login')
+    async def demo_login(request: Request):
+        if account is None:
+            raise RegistrationError('请在客户端主入口切换账号。')
+        body = await request.json()
+        if body.get('account') not in {'admin', 'node_submitter', 'node_reviewer', 'registered'}:
+            raise RegistrationError('请选择已配置的演示身份。')
+        await account.demo_login(body['account'])
+        association.clear()
+        return await associate({'import_local_model': False})
 
     @app.post('/api/account/logout')
     async def account_logout():

@@ -36,6 +36,16 @@ class PlatformAccount:
             self.hint.unlink(missing_ok=True)
             return {'authenticated': True, 'expires_at': result.get('expiresAt')}
 
+    async def demo_profiles(self):
+        return await self.raw('GET', '/api/demo/accounts')
+
+    async def demo_login(self, identity):
+        async with self.lock:
+            result = await self.raw('POST', '/api/demo/login', {'account': identity})
+            self.save(result)
+            self.hint.unlink(missing_ok=True)
+            return {'authenticated': True}
+
     async def ensure(self):
         async with self.lock:
             if not self.nodes.credentials.get('platform'):

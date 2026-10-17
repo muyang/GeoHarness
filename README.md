@@ -1,4 +1,4 @@
-# GeoHarness v0.3
+# GeoHarness v0.2.9
 
 GeoNexus 的独立地理工作台。当前共享运行时使用 Python 服务与静态 Web UI，Platform 通过认证网关嵌入同一运行时；客户端和平台关联账号后，共享模型配置、对话、地图、执行记录与案例。
 
@@ -19,6 +19,8 @@ GeoNexus 的独立地理工作台。当前共享运行时使用 Python 服务与
 桌面框架源码采用同一套界面与运行时，当前未交付已签名安装包。见 [桌面预览与打包](desktop/README.md)。本阶段不把 Java、数据库和 GIS 依赖复制进桌面包；完整离线安装、系统钥匙串、代码签名和自动更新属于后续交付。
 
 本版将查看器通信改为 GeoLibre 3.3.0 官方 Widget 协议，按窗口、同源、requestId 与项目 seq 校验实际完成状态。嵌入 Platform 时加载平台共享 `/map/viewer` 组件；独立客户端继续使用官方 GeoLibre 查看器。地图范围参数遵循 `[west, south, east, north]`，保持既有模型、任务与案例接口。使用固定依赖和带哈希的查看器适配资源。
+
+本次版本号按演示发布线指定为 **v0.2.9**；历史 v0.3 标签保留。新增统一深浅主题、Platform 风格底图、地图视图恢复，以及产品市场调用时自动注入 GeoLibre 内部会话。已安装产品仍须具有当前有效的调用授权，外部节点契约发生变化仍要求重新确认安装。
 
 ## 本版能力
 
@@ -44,7 +46,7 @@ python3.12 -m venv .venv
 
 打开 `http://127.0.0.1:8810/`。默认监听本机回环地址。`workspace` 存储实际模型设置、连接凭据、安装记录、任务与产物，应该放在源码仓库外。
 
-**依赖发布状态**：运行需要 SDK 的 `geonexus.registration` 等扩展接口。`GeoNexus-SDK` 当前远端 `main` 的 1.0.0 源码尚不含这些接口；仅安装该旧版本不能启动此共享运行时。本版 Python 声明要求 SDK 1.1 开发线，验证使用匹配的本地已审核源码。GeoKG / Platform 插件扩展也需要匹配的已审核版本，不能假定远端旧版本已兼容。SDK 与 GeoKG 的源码发布不在本标签范围内。
+**依赖发布状态**：运行需要 SDK 的 `geonexus.registration` 等扩展接口。请确认所用 SDK 包含 `geonexus.registration`、MCP 与 GeoNode 扩展接口；不包含这些接口的旧 SDK 不能启动此共享运行时。本版 Python 声明要求 SDK 1.1 开发线，验证使用匹配的本地已审核源码。GeoKG / Platform 插件扩展也需要匹配的已审核版本，不能假定远端旧版本已兼容。SDK 与 GeoKG 的源码发布不在本标签范围内。
 
 GeoLibre Viewer 使用 3.3.0；GeoNode WASI 算子执行器独立使用其审核版本。可选依赖版本见 [requirements-tested.txt](requirements-tested.txt)。运行真实案例还须连接有实际数据和执行能力的已授权 GeoNode；客户端安装不会启动远端算力或复制原始数据。
 

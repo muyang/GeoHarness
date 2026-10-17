@@ -8,14 +8,20 @@ const wbLabels={input:'输入图层',input1:'第一输入',input2:'第二输入'
 const wbEndpoint=path=>apiURL('workbench/'+path);
 const wbOrigin=()=>new URL(wbFrame.src || location.href).origin;
 
+function workbenchProject(project){
+ // Only the basemap presentation changes; retain the account's layers, camera and preferences.
+ const platform=location.pathname.startsWith('/api/workbench/runtime/') && new URLSearchParams(location.search).get('surface')==='platform';
+ return {...project,basemapStyleUrl:new URL(platform?'/basemap-local/geo-dark.json':'/ui/basemap-local/geo-dark.json',location.origin).href};
+}
+
 function nativeCommand(method,params={}){
- return new Promise((resolve,reject)=>{if(!wbReady||!wbFrame.contentWindow)return reject(new Error('GeoLibre 正在加载，请稍后重试。'));const id=crypto.randomUUID(),timer=setTimeout(()=>{wbPending.delete(id);reject(new Error('查看器尚未确认地图操作。'));},30000);wbPending.set(id,{resolve,reject,timer});wbFrame.contentWindow.postMessage({type:'geolibre:command',method,params,requestId:id},wbOrigin());});
+ return new Promise((resolve,reject)=>{if(!wbReady||!wbFrame.contentWindow)return reject(new Error('GeoLibre 正在加载，请稍后重试。'));const id=crypto.randomUUID(),timer=setTimeout(()=>{wbPending.delete(id);reject(new Error('查看器尚未确认地图操作。'));},30000);wbPending.set(id,{resolve,reject,timer});wbFrame.contentWindow.postMessage({type:['setProjection','getProjection'].includes(method)?'geonexus:projection':'geolibre:command',method,params,requestId:id},wbOrigin());});
 }
 async function viewerCommand(command){
  const params=command.payload||{};
  if(command.type==='loadProject'){
   const url=new URL(params.url,location.origin);if(url.origin!==location.origin||!url.pathname.startsWith('/api/')&&!url.pathname.startsWith('/accounts/'))throw new Error('项目地址须来自当前账号接口');
-  const response=await fetch(url.href);if(!response.ok)throw new Error('项目读取失败（'+response.status+'）');const project=await response.json(),seq=++wbProjectSeq;
+  const response=await fetch(url.href);if(!response.ok)throw new Error('项目读取失败（'+response.status+'）');const project=workbenchProject(await response.json()),seq=++wbProjectSeq;
   return new Promise((resolve,reject)=>{const timer=setTimeout(()=>{wbPending.delete(seq);reject(new Error('GeoLibre 项目加载等待超时'));},30000);wbPending.set(seq,{resolve,reject,timer,project:true});wbFrame.contentWindow.postMessage({type:'geolibre:load-project',project,seq,trustedWidget:true},wbOrigin());wbFrame.contentWindow.postMessage({type:'geolibre:request-state'},wbOrigin());});
  }
  if(command.type==='setView'&&params.bbox)return nativeCommand('fitBounds',{bounds:params.bbox});
@@ -38,7 +44,8 @@ async function mapSync(viewport){
 window.addEventListener('message',event=>{
   if(event.source!==wbFrame.contentWindow||event.origin!==wbOrigin())return;
   const data=event.data;if(!data||typeof data!=='object')return;
-  if(data.type==='geolibre:result'){
+  if(data.type==='geonexus:projection-state'){setProjectionButtons(data.projection);return;}
+  if(['geolibre:result','geonexus:projection-result'].includes(data.type)){
    const pending=wbPending.get(data.requestId);if(!pending)return;clearTimeout(pending.timer);wbPending.delete(data.requestId);data.ok?pending.resolve(data.value):pending.reject(new Error(data.error||'地图动作未完成。'));
   }else if(data.type==='geolibre:ready'&&!wbReady){
    wbReady=true;$('wb-map-status').textContent='正在恢复共享地图…';viewerCommand({type:'loadProject',payload:{url:location.origin+wbEndpoint('project')}}).then(()=>mapSync()).catch(e=>{$('wb-map-status').textContent=e.message;});
@@ -49,8 +56,13 @@ window.addEventListener('message',event=>{
   }else if(data.type==='geolibre:event'&&data.event==='selection-change')api('workbench/map/sync',{selection:data.payload}).then(context=>{wbContext=context;renderMapContext();}).catch(e=>toast(e.message));
 });
 let wbSyncTimer,wbProjectSeq=0;
+
+function setProjectionButtons(projection){for(const id of ['wb-2d','wb-3d']){const button=$(id);button?.setAttribute?.('aria-pressed',String(projection===(id==='wb-2d'?'mercator':'globe')));}}
+for(const [id,projection] of [['wb-2d','mercator'],['wb-3d','globe']])$(id).onclick=()=>action($(id),()=>mapAction('view.projection',{projection}));
+$('wb-asia').onclick=()=>action($('wb-asia'),()=>mapAction('view.set',{center:[125,25],zoom:2.6}));
+
 function renderMapContext(){
-  if(!wbContext)return;$('wb-context').textContent=JSON.stringify(wbContext,null,2);
+  if(!wbContext)return;setProjectionButtons(wbContext.projection);$('wb-context').textContent=JSON.stringify(wbContext,null,2);
   $('wb-layers').innerHTML=wbContext.layers.map(layer=>`<label class="wb-layer"><input type="checkbox" data-layer="${esc(layer.id)}" ${layer.visible?'checked':''}><span>${esc(layer.name)}</span><small>${esc(layer.type)}</small></label>`).join('')||'<span class="muted">运行案例或工具后，成果图层会出现在这里。</span>';
   $('wb-layers').querySelectorAll('[data-layer]').forEach(input=>input.onchange=()=>mapAction('layer.visibility',{layer_id:input.dataset.layer,visible:input.checked}).catch(e=>toast(e.message)));
 }
@@ -215,13 +227,18 @@ $('send-chat').onclick=()=>action($('send-chat'),async()=>{
  }catch(e){$('wb-chat-status').textContent=e.message;message('assistant',e.message);throw e;}
  finally{wbChatting=false;$('wb-conversations').disabled=false;$('wb-new-conversation').disabled=false;await refreshConversations(false);await refreshWorkbench();}
 });
-if(new URLSearchParams(location.search).get('theme')==='dark')document.body.classList.add('wb-dark');
+function updatePlatformLinks(){
+  // The lightweight session can arrive before bootstrap has supplied Platform's URL.
+  if(!state?.platform_url)return;
+  document.querySelectorAll?.('[data-platform-path]').forEach(link=>{link.href=new URL(link.dataset.platformPath,state.platform_url).href;});
+}
 const wbInitialize=setInterval(()=>{if(!state||!csrf)return;clearInterval(wbInitialize);
   $('wb-account').textContent=state.account?.scoped?'当前账号的独立共享工作空间':'本机工作空间 · 关联 Platform 后，两种入口共享同一账号的地图与案例';$('wb-link-account').hidden=Boolean(state.account?.scoped);
   if(state.account?.scoped){$('platform-signin').disabled=true;$('platform-signin-status').textContent='身份由当前共享会话固定；请在主入口切换账号。';}
-  wbFrame.src=location.pathname.startsWith('/api/workbench/runtime/') && new URLSearchParams(location.search).get('surface')==='platform' ? '/map/viewer?surface=workbench' : BASE+'ui/geo-viewer/index.html?maponly=1&embed=1&lang=zh';
+  updatePlatformLinks();
+  wbFrame.src=location.pathname.startsWith('/api/workbench/runtime/') && new URLSearchParams(location.search).get('surface')==='platform' ? '/map/viewer?surface=workbench' : BASE+'ui/geo-viewer/index.html?maponly=1&embed=1&lang=zh&adapter=projection-0f18e9b7d65a';
   refreshWorkbench().then(()=>refreshConversations(true)).catch(e=>toast(e.message));
   setInterval(()=>{if(wbJobs.some(j=>['running','queued'].includes(j.status)))refreshJobs().catch(e=>toast(e.message));if(wbPlanRows.some(p=>['running','queued'].includes(p.status)))refreshPlans().catch(e=>toast(e.message));},1500);
 },100);
 
-window.addEventListener('geoharness-ready',()=>refreshWorkbench().catch(e=>toast(e.message)));
+window.addEventListener('geoharness-ready',()=>{updatePlatformLinks();refreshWorkbench().catch(e=>toast(e.message));});

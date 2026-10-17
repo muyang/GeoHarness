@@ -1,7 +1,7 @@
 {
   "name": "geoharness-ui-tests",
   "private": true,
-  "version": "0.3.0",
+  "version": "0.2.9",
   "description": "Browser regression tests for the shared Python/static GeoHarness runtime",
   "scripts": {
     "test": "node --test tests/*.cjs desktop/policy.test.cjs"

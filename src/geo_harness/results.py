@@ -357,12 +357,17 @@ class Results:
             from .raster_preview import preview_band
             band = preview_band(raster_preview)
             stretch = raster_preview.get("stretch")
+            display_rgb = False
+            if (value.get('display_preview') or {}).get('role') == 'display-only':
+                import rasterio
+                with rasterio.open(path) as src:
+                    display_rgb = src.count == 3
             project["layers"].append(
                 gp.cog_layer(
                     artifact["name"] + " · " + (raster_preview.get("label", "真实栅格") if index == 0 else "中间成果"),
                     f"{base_url}/api/resource-results/{identity}/artifacts/{artifact['name']}",
-                    bands=[band],
-                    colormap="viridis",
+                    bands=[1, 2, 3] if display_rgb else [band],
+                    colormap=None if display_rgb else "viridis",
                     rescale=[stretch] if stretch else None,
                 )
             )

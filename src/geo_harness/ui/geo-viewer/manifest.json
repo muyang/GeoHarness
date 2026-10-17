@@ -12,5 +12,12 @@
   "native_assets": "/viewer",
   "license": "MIT",
   "upstream": "https://github.com/opengeos/GeoLibre",
-  "upgrade_policy": "Regenerate and review for an exact supported upstream version; never silently patch a different version."
+  "upgrade_policy": "Regenerate and review for an exact supported upstream version; never silently patch a different version.",
+  "projection_adapter": {
+    "module": "projection-bridge.js",
+    "sha256": "0f18e9b7d65ae1b968630f66860ab8253167bcd18217e1f28bc52b48fcdffa3f",
+    "store_module": "src-DJ0hBNSB.js",
+    "store_sha256": "7245fbb7efdacf0afd00cbf4ee8d8b283afb6854c265cffaeb8b5359d6900f5e",
+    "scope": "Same-origin parent; projection preference only; no project reload"
+  }
 }

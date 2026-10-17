@@ -321,3 +321,23 @@ def test_restart_never_keeps_unacknowledged_map_actions_pending_forever(tmp_path
         assert resumed.context()['viewer_connected'] is False
         await resumed.close()
     asyncio.run(check())
+
+
+def test_projection_action_keeps_layers_and_view_and_requires_viewer_ack(tmp_path):
+    async def check():
+        workbench, _, _, calls = build(tmp_path)
+        assert workbench.state['project']['mapView']['center'] == [125, 25]
+        workbench.state['project']['layers'] = [{'id': 'current-raster', 'name': 'Current raster', 'metadata': {'handle': 'session-local'}}]
+        original = copy.deepcopy(workbench.state['project'])
+        result = await workbench.action('view.projection', {'projection': 'globe'}, workbench.state['revision'], 'http://127.0.0.1:8810')
+        assert result['status'] == 'pending'
+        assert result['commands'] == [{'type': 'setProjection', 'payload': {'projection': 'globe'}}]
+        assert workbench.state['project']['layers'] == original['layers']
+        assert workbench.state['project']['mapView'] == original['mapView']
+        assert workbench.context()['projection'] == 'globe'
+        workbench.ack(result['id'], {'ok': True})
+        with pytest.raises(RegistrationError):
+            await workbench.action('view.projection', {'projection': 'invalid'}, workbench.state['revision'], 'http://127.0.0.1:8810')
+        assert not calls
+        await workbench.close()
+    asyncio.run(check())

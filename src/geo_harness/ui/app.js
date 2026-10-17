@@ -285,6 +285,7 @@ function renderDetail() {
   if($('resource-run')) {
     const schema=live.input_schema||{},defaults={};
     for(const [key,p] of Object.entries(schema.properties||{})) {
+      if(p['x-internal'] || p.writeOnly) continue;
       if(p.default!==undefined || p.const!==undefined) defaults[key]=p.default??p.const;
       const label=document.createElement('label');label.className='field';label.textContent=(p.title||key)+(schema.required?.includes(key)?' *':'');
       let input;

@@ -14,18 +14,43 @@ test('client viewer uses the same version-checked default renderer while retaini
  const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
  const imports=JSON.parse(html.match(/<script type="importmap">(.*?)<\/script>/s)[1]).imports;
  assert.equal(imports['/viewer/assets/'+manifest.upstream_module],'/ui/geo-viewer/'+manifest.adapter_module);
+ assert.ok(fs.readFileSync(path.join(root,'../workbench.js'),'utf8').includes('projection-'+manifest.projection_adapter.sha256.slice(0,12)));
 });
 const elements=new Map();
 const listeners=new Map();
 const context=vm.createContext({
   URL,URLSearchParams,Number,Map,crypto:require('node:crypto').webcrypto,
-  location:{origin:'http://127.0.0.1:8810',href:'http://127.0.0.1:8810/',search:''},
+  location:{origin:'http://127.0.0.1:8810',href:'http://127.0.0.1:8810/',pathname:'/',search:''},
   window:{addEventListener:(name,listener)=>listeners.set(name,listener)},document:{body:{classList:{add(){}}}},
   $:id=>{if(!elements.has(id))elements.set(id,{src:'',querySelectorAll:()=>[]});return elements.get(id);},
   setInterval:()=>0,clearInterval(){},setTimeout:()=>0,clearTimeout(){},
   apiURL:p=>'/api/'+p,esc:value=>String(value??''),
 });
 vm.runInContext(fs.readFileSync(path.join(__dirname,'../src/geo_harness/ui/workbench.js'),'utf8'),context);
+test('both workbench surfaces use the Platform basemap without changing research data or projection',()=>{
+ const project={basemapStyleUrl:'https://old-basemap.example/style.json',mapView:{center:[114.3,30.57],zoom:12},layers:[{id:'dem',type:'cog',source:{url:'/accounts/123/api/resource-results/dem'}}],preferences:{map:{projection:'globe'}}};
+ const before=JSON.stringify(project);
+ context.inputProject=project;
+ const client=JSON.parse(JSON.stringify(vm.runInContext('workbenchProject(inputProject)',context)));
+ assert.equal(client.basemapStyleUrl,'http://127.0.0.1:8810/ui/basemap-local/geo-dark.json');
+ const originalLocation=context.location;
+ context.location={origin:'http://127.0.0.1:3301',pathname:'/api/workbench/runtime/',search:'?surface=platform'};
+ const platform=JSON.parse(JSON.stringify(vm.runInContext('workbenchProject(inputProject)',context)));
+ assert.equal(platform.basemapStyleUrl,'http://127.0.0.1:3301/basemap-local/geo-dark.json');
+ for(const result of [client,platform]){assert.deepEqual(result.layers,project.layers);assert.deepEqual(result.mapView,project.mapView);assert.deepEqual(result.preferences,project.preferences)}
+ assert.equal(JSON.stringify(project),before);
+ context.location=originalLocation;
+ const bundled=JSON.parse(fs.readFileSync(path.join(__dirname,'../src/geo_harness/ui/basemap-local/geo-dark.json'),'utf8'));
+ assert.equal(bundled.version,8);assert.ok(bundled.layers.length>0);
+ for(const source of Object.values(bundled.sources))for(const tile of source.tiles||[])assert.ok(tile.startsWith('/ui/basemap-local/'));
+});
+test('subsystem links wait for Platform bootstrap rather than pointing into the client origin',()=>{
+ const links=[{dataset:{platformPath:'/map'},href:'#'},{dataset:{platformPath:'/community?category=blog'},href:'#'}];
+ context.document.querySelectorAll=()=>links;context.state={account:{}};
+ vm.runInContext('updatePlatformLinks()',context);assert.equal(links[0].href,'#');
+ context.state.platform_url='http://127.0.0.1:3301';vm.runInContext('updatePlatformLinks()',context);
+ assert.equal(links[0].href,'http://127.0.0.1:3301/map');assert.equal(links[1].href,'http://127.0.0.1:3301/community?category=blog');
+});
 function normalize(view){return JSON.parse(JSON.stringify(vm.runInContext('normalizeViewerViewport('+JSON.stringify(view)+')',context)));}
 test('world copies normalize to one full WGS84 world without mutating the view',()=>{
   const view={center:[474.3,30.57],bbox:[-220,-84,530,84],zoom:2,bearing:0,pitch:0};

@@ -55,7 +55,7 @@ def object_schema(properties, required=()):
 STR = {'type': 'string', 'minLength': 1, 'maxLength': 200}
 TOOLS = {
     'map_context': ('读取工作台当前地图、已授权图层、字段、选择与用户实际视野。', object_schema({})),
-    'map_action': ('操作地图：定位、图层显隐、样式或撤销；先读取地图版本和图层ID。', object_schema({'action': {'enum': ['view.set', 'layer.visibility', 'layer.style', 'layer.remove', 'undo', 'result.open']}, 'arguments': {'type': 'object'}, 'expected_revision': {'type': 'integer', 'minimum': 0}}, ['action', 'expected_revision'])),
+    'map_action': ('操作地图：定位、图层显隐、样式或撤销；先读取地图版本和图层ID。', object_schema({'action': {'enum': ['view.set', 'view.projection', 'layer.visibility', 'layer.style', 'layer.remove', 'undo', 'result.open']}, 'arguments': {'type': 'object'}, 'expected_revision': {'type': 'integer', 'minimum': 0}}, ['action', 'expected_revision'])),
     'operator_search': ('检索已安装、公开且授权的 Data、Skill、Workflow 能力。', object_schema({'query': {'type': 'string', 'maxLength': 512}})),
     'operator_describe': ('读取一个已安装产品的真实输入契约、版本、来源和所需权限。', object_schema({'product_id': STR}, ['product_id'])),
     'operator_execute': ('按已经读取的契约提交获授权的产品计算；返回任务编号，随后查询状态。', object_schema({'product_id': STR, 'arguments': {'type': 'object'}, 'expected_digest': STR}, ['product_id', 'arguments', 'expected_digest'])),
@@ -79,9 +79,10 @@ class Workbench:
         if not self.path.exists():
             try:
                 from geolibre.project import build_empty_project
-                project = build_empty_project('GeoHarness · 共享工作台', center=[114.3, 30.57], zoom=5)
+                project = build_empty_project('GeoHarness · 共享工作台', center=[125, 25], zoom=2.6)
             except ImportError:
-                project = {'name': 'GeoHarness', 'layers': [], 'mapView': {'center': [114.3, 30.57], 'zoom': 5}}
+                project = {'name': 'GeoHarness', 'layers': [], 'mapView': {'center': [125, 25], 'zoom': 2.6}}
+            project.setdefault('preferences', {}).setdefault('map', {})['projection'] = 'mercator'
             write_private(self.path, {'revision': 0, 'project': project, 'observed': {}, 'history': [], 'actions': []})
         self.state = read_json(self.path)
         restarted = False
@@ -149,7 +150,7 @@ class Workbench:
         for layer in layers:
             if layer['id'] in actual:
                 layer['visible'] = actual[layer['id']].get('visible', layer['visible'])
-        return {'revision': self.state['revision'], 'viewer': 'GeoLibre', 'project_name': '[私有项目摘要未共享]' if for_model and restricted else self.state['project'].get('name'), 'crs': 'EPSG:4326', 'viewport': {} if for_model and restricted else observed.get('viewport', self.state['project'].get('mapView', {})), 'layers': layers, 'selection': None if for_model and restricted else observed.get('selection'), 'observed_at': observed.get('at'), 'viewer_connected': time.time() - observed.get('time', 0) < 120, 'pending_actions': [] if for_model and restricted else [public_value(a) for a in self.state['actions'][-10:] if a['status'] == 'pending']}
+        return {'revision': self.state['revision'], 'viewer': 'GeoLibre', 'projection': self.state['project'].get('preferences', {}).get('map', {}).get('projection', 'mercator'), 'project_name': '[私有项目摘要未共享]' if for_model and restricted else self.state['project'].get('name'), 'crs': 'EPSG:4326', 'viewport': {} if for_model and restricted else observed.get('viewport', self.state['project'].get('mapView', {})), 'layers': layers, 'selection': None if for_model and restricted else observed.get('selection'), 'observed_at': observed.get('at'), 'viewer_connected': time.time() - observed.get('time', 0) < 120, 'pending_actions': [] if for_model and restricted else [public_value(a) for a in self.state['actions'][-10:] if a['status'] == 'pending']}
 
     def sync(self, body):
         viewport = body.get('viewport', {})
@@ -183,7 +184,7 @@ class Workbench:
     async def action(self, name, args, revision, base_url):
         if revision != self.state['revision']:
             raise RegistrationError('地图已变化，请读取最新地图上下文后再操作。')
-        if name not in {'view.set', 'layer.visibility', 'layer.style', 'layer.remove', 'undo', 'result.open'}:
+        if name not in {'view.set', 'view.projection', 'layer.visibility', 'layer.style', 'layer.remove', 'undo', 'result.open'}:
             raise RegistrationError('未提供该地图动作。')
         project = copy.deepcopy(self.state['project'])
         commands = []
@@ -200,6 +201,10 @@ class Workbench:
             if args.get('bbox'):
                 a = args['bbox']; project['mapView']['center'] = [(a[0]+a[2])/2, (a[1]+a[3])/2]
             commands = [{'type': 'setView', 'payload': args}]
+        elif name == 'view.projection':
+            validate_arguments(object_schema({'projection': {'enum': ['globe', 'mercator']}}, ['projection']), args)
+            project.setdefault('preferences', {}).setdefault('map', {})['projection'] = args['projection']
+            commands = [{'type': 'setProjection', 'payload': args}]
         elif name.startswith('layer.'):
             layer = next((l for l in project.get('layers', []) if l['id'] == args.get('layer_id')), None)
             if not layer:
@@ -316,7 +321,8 @@ class Workbench:
         binding = read_json(inside(root, manifest['binding']))
         schema = binding.get('input_schema', {})
         args = dict(arguments)
-        if 'session_token' in schema.get('properties', {}):
+        field = schema.get('properties', {}).get('session_token', {})
+        if field.get('x-internal') is True and field.get('writeOnly') is True:
             args['session_token'] = self.node_session
         return args, binding
 

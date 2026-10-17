@@ -352,3 +352,27 @@ def test_independent_client_workspaces_do_not_overwrite_browser_sessions(tmp_pat
         assert one!=two and one!='geo_session' and two!='geo_session'
         assert first.get('/api/resource-nodes').status_code==200
         assert second.get('/api/resource-nodes').status_code==200
+
+
+def test_market_call_injects_private_session_without_manual_input(tmp_path):
+    app = create_app(tmp_path)
+    peer = Peer()
+    schema = peer.rows[0]['state']['input_schema']
+    schema['properties']['session_token'] = {'type': 'string', 'pattern': '^[a-f0-9]{32}$', 'x-internal': True, 'writeOnly': True}
+    schema['required'] = ['session_token']
+    app.state.resource_nodes.transport = httpx.MockTransport(peer.request)
+    with TestClient(app) as c:
+        c.get('/')
+        headers = {'x-geo-csrf': c.get('/api/bootstrap').json()['csrf']}
+        item = c.get('/api/resource-catalog').json()['items'][0]
+        identity = item['id']
+        assert c.post(f'/api/resource-catalog/{identity}/install', json={'granted': item['permissions']}, headers=headers).status_code == 200
+        response = c.post(f'/api/resources/{identity}/call', json={'arguments': {}, 'confirm_execution': True}, headers=headers)
+        assert response.status_code == 200, response.text
+        sent = [call[3] for call in peer.calls if call[1].endswith('/api/v1/node-executions')][-1]
+        token = sent['arguments']['session_token']
+        assert len(token) == 32 and token == app.state.workbench.node_session
+        assert token not in response.text
+        response = c.post(f'/api/resources/{identity}/call', json={'arguments': {'session_token': 'f'*32}, 'confirm_execution': True}, headers=headers)
+        assert response.status_code == 200
+        assert [call[3] for call in peer.calls if call[1].endswith('/api/v1/node-executions')][-1]['arguments']['session_token'] == token
