@@ -6,6 +6,7 @@ const $ = id => document.getElementById(id);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let state, csrf, filter = '', selectedRun = '', pendingProduct, connectorProduct, viewerURL;
 let resourceCatalog = [], resourceNodes = [], selectedResource, detailTab = '概览', discovery, resourceTab = 'installed';
+let catalogReady = false, reloadPending;
 const demoID = 'org.geonexus.synthetic-wetland';
 let toastTimer, settingsDirty = false;
 function toast(message) { $('toast').textContent = message; $('toast').style.display = 'block'; clearTimeout(toastTimer); toastTimer = setTimeout(() => $('toast').style.display = 'none', 7000); }
@@ -32,6 +33,7 @@ function page(name) {
   $('breadcrumb').textContent = '工作空间 / ' + ({workbench:'工作台',market:'产品市场',register:'资源登记',resources:'我的资源',settings:'模型与设置'}[name]);
   if (name === 'resources') resourcePane(pane || resourceTab);
   if (name === 'settings' && state) { settingsDirty=false; api('session').then(data=>{state.settings=data.settings;state.llm_providers=data.providers;renderSettings();}).catch(error=>toast(error.message)); }
+  if (state && ['market','resources','register'].includes(name)) ensureCatalog().catch(error=>toast(error.message));
 }
 document.querySelectorAll('[data-page]').forEach(el => el.onclick = () => page(el.dataset.page));
 function renderSettings() {
@@ -161,10 +163,38 @@ $('local-product').onclick = () => action($('local-product'), async () => { awai
 $('save-connector').onclick = () => action($('save-connector'),async () => { await api('connections',{product_id:connectorProduct,api_key:$('connector-key').value}); $('connector-key').value = ''; toast('连接凭据已单独保存。'); });
 $('connector-tools').onclick = () => action($('connector-tools'),async () => { const data = await api(`resources/${connectorProduct}/tools`,{}); $('connector-schema').textContent = JSON.stringify(data,null,2); $('connector-tool').replaceChildren(...data.map(tool => { const option = document.createElement('option'); option.value = tool.name; option.textContent = tool.name; return option; })); });
 $('connector-call').onclick = () => action($('connector-call'),async () => { const data = await api(`resources/${connectorProduct}/call`,{tool:$('connector-tool').value || undefined,arguments:JSON.parse($('connector-args').value),confirm_execution:$('connector-confirm').checked}); $('connector-result').textContent = JSON.stringify(data,null,2);if(data._harness){await showProductResult(data._harness.id,$('connector-result-view'));await refreshProductResults();} });
-async function reload() { state = await api('bootstrap'); csrf = state.csrf; resourceNodes=state.resource_nodes || resourceNodes;renderResourceNodes();for(const id of ['discover-node','platform-signin','save-node-token'])$(id).disabled=id==='platform-signin' && Boolean(state.account?.scoped); renderProducts(); renderSettings(); renderNodeProducts(); await Promise.all([renderPluginStatus(),refreshRuns(),loadResourceCatalog()]); renderProducts(); }
+function ensureCatalog() {
+  if(catalogReady)return Promise.resolve();
+  $('catalog-status').textContent='正在读取已审核产品目录，地图可继续使用…';
+  return reload();
+}
+async function reload() {
+  if (reloadPending) return reloadPending;
+  const pending=(async()=>{
+    const snapshot=await api('bootstrap');
+    // A catalogue refresh must not overwrite newer model settings edited in this session.
+    state={...snapshot,settings:state.settings};csrf=state.csrf;resourceNodes=state.resource_nodes||resourceNodes;
+    renderResourceNodes();for(const id of ['discover-node','platform-signin','save-node-token'])$(id).disabled=id==='platform-signin' && Boolean(state.account?.scoped);
+    renderProducts();renderSettings();renderNodeProducts();
+    await Promise.all([renderPluginStatus(),refreshRuns(),loadResourceCatalog()]);
+    catalogReady=true;renderProducts();window.dispatchEvent(new Event('geoharness-catalog-ready'));
+  })();
+  reloadPending=pending;
+  try { await pending; } finally { if(reloadPending===pending)reloadPending=undefined; }
+}
+window.addEventListener('geoharness-map-ready',()=>ensureCatalog().catch(error=>toast(error.message)),{once:true});
 initResourceUI();
 page(location.hash.slice(1) || 'workbench');
-(async()=>{const data=await api('session');csrf=data.csrf;state={settings:data.settings,account:data.account,llm_providers:data.providers,catalog:[],catalog_cards:{},cards:[],runs:[],plugins:[],resource_nodes:[],resource_results:[]};renderSettings();await reload();window.dispatchEvent(new Event('geoharness-ready'));})().then(() => { const wanted = new URLSearchParams(location.search).get('product'); if (wanted) { const entry=allEntries().find(x=>x.id===wanted || x.geocard.id===wanted);if(entry)$('catalog-source').value=entry.source_id;$('product-search').value=entry?.geocard.id || wanted; renderProducts(); } }).catch(error => toast(error.message));
+(async()=>{
+  const data=await api('session');csrf=data.csrf;
+  state={settings:data.settings,account:data.account,llm_providers:data.providers,version:data.version,platform_url:data.platform_url,catalog:[],catalog_cards:{},cards:[],runs:[],plugins:[],resource_nodes:[],resource_results:[]};
+  renderSettings();window.dispatchEvent(new Event('geoharness-ready'));
+  const wanted=new URLSearchParams(location.search).get('product');
+  if(wanted || ['market','resources','register'].includes(location.hash.slice(1).split('/')[0])) {
+    await ensureCatalog();
+    if(wanted){const entry=allEntries().find(x=>x.id===wanted || x.geocard.id===wanted);if(entry)$('catalog-source').value=entry.source_id;$('product-search').value=entry?.geocard.id || wanted;renderProducts();}
+  }
+})().catch(error=>toast(error.message));
 setInterval(() => { if (state?.runs?.some(r => ['queued','running','cancel_requested'].includes(r.status))) refreshRuns().catch(error => toast(error.message)); }, 2000);
 
 $('knowledge-search').onclick = () => action($('knowledge-search'), async () => {

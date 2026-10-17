@@ -2,6 +2,7 @@
 // GeoLibre's documented embed protocol drives the actual viewer, with origin/source checks.
 let wbContext, wbOperators=[], wbJobs=[], wbJob='', wbCases, wbDescription, wbReady=false;
 let wbConversation='',wbPlanRows=[],wbChatting=false;
+let wbInitialized=false,wbMapAnnounced=false,wbStartedAt=0;
 const wbFrame=$('wb-map'), wbPending=new Map();
 const wbStatus={queued:'已排队',running:'运行中',completed:'已完成',failed:'失败',interrupted:'已停止等待'};
 const wbLabels={input:'输入图层',input1:'第一输入',input2:'第二输入',inputs:'输入图层列表',polygons:'裁剪多边形',base:'对齐参考栅格',distance:'缓冲距离',units:'单位',z_factor:'高程换算系数',stat_type:'统计方法',features:'分区栅格',index:'遥感指数',red:'红光波段编号',nir:'近红外波段编号',method:'处理方法',cell_size:'目标像元大小',epsg:'目标 EPSG',field:'属性字段',mode:'执行方式'};
@@ -39,7 +40,7 @@ function normalizeViewerViewport(viewport){
 }
 async function mapSync(viewport){
   if(!wbReady)return;
-  try{const layers=await viewerCommand({type:'listLayers'});const view=normalizeViewerViewport(viewport||await viewerCommand({type:'getViewport'}));wbContext=await api('workbench/map/sync',{viewport:view,layers});renderMapContext();$('wb-map-status').textContent='GeoLibre 已连接';}catch(e){$('wb-map-status').textContent=e.message;}
+  try{const layers=await viewerCommand({type:'listLayers'});const view=normalizeViewerViewport(viewport||await viewerCommand({type:'getViewport'}));wbContext=await api('workbench/map/sync',{viewport:view,layers});renderMapContext();const status=$('wb-map-status');status.textContent='GeoLibre 已连接';if(!wbMapAnnounced){wbMapAnnounced=true;if(status.dataset)status.dataset.readyMs=String(Date.now()-wbStartedAt);window.dispatchEvent(new Event('geoharness-map-ready'));}}catch(e){$('wb-map-status').textContent=e.message;}
 }
 window.addEventListener('message',event=>{
   if(event.source!==wbFrame.contentWindow||event.origin!==wbOrigin())return;
@@ -232,13 +233,17 @@ function updatePlatformLinks(){
   if(!state?.platform_url)return;
   document.querySelectorAll?.('[data-platform-path]').forEach(link=>{link.href=new URL(link.dataset.platformPath,state.platform_url).href;});
 }
-const wbInitialize=setInterval(()=>{if(!state||!csrf)return;clearInterval(wbInitialize);
+function initializeWorkbench(){if(wbInitialized||typeof state==='undefined'||!state||!csrf)return;wbInitialized=true;wbStartedAt=Date.now();
   $('wb-account').textContent=state.account?.scoped?'当前账号的独立共享工作空间':'本机工作空间 · 关联 Platform 后，两种入口共享同一账号的地图与案例';$('wb-link-account').hidden=Boolean(state.account?.scoped);
   if(state.account?.scoped){$('platform-signin').disabled=true;$('platform-signin-status').textContent='身份由当前共享会话固定；请在主入口切换账号。';}
   updatePlatformLinks();
-  wbFrame.src=location.pathname.startsWith('/api/workbench/runtime/') && new URLSearchParams(location.search).get('surface')==='platform' ? '/map/viewer?surface=workbench' : BASE+'ui/geo-viewer/index.html?maponly=1&embed=1&lang=zh&adapter=projection-0f18e9b7d65a';
-  refreshWorkbench().then(()=>refreshConversations(true)).catch(e=>toast(e.message));
+  const theme=new URLSearchParams(location.search).get('theme') || document.documentElement.dataset.theme || 'dark';
+  wbFrame.src=location.pathname.startsWith('/api/workbench/runtime/') && new URLSearchParams(location.search).get('surface')==='platform' ? '/map-viewer.html?surface=workbench&theme='+encodeURIComponent(theme) : BASE+'ui/geo-viewer/index.html?maponly=1&embed=1&lang=zh&adapter=projection-0f18e9b7d65a&theme='+encodeURIComponent(theme);
+  refreshWorkbench().catch(e=>toast(e.message));
   setInterval(()=>{if(wbJobs.some(j=>['running','queued'].includes(j.status)))refreshJobs().catch(e=>toast(e.message));if(wbPlanRows.some(p=>['running','queued'].includes(p.status)))refreshPlans().catch(e=>toast(e.message));},1500);
-},100);
+}
 
-window.addEventListener('geoharness-ready',()=>{updatePlatformLinks();refreshWorkbench().catch(e=>toast(e.message));});
+window.addEventListener('geoharness-ready',initializeWorkbench);
+window.addEventListener('geoharness-catalog-ready',updatePlatformLinks);
+// A cached session response can arrive before this deferred script finishes loading.
+initializeWorkbench();

@@ -224,6 +224,10 @@ def create_app(workspace: Path, *, _principal: str | None = None) -> FastAPI:
 
     @app.get("/api/bootstrap")
     async def bootstrap():
+        # Package hashing and snapshot reads must not block the map/session event loop.
+        return await asyncio.to_thread(bootstrap_snapshot)
+
+    def bootstrap_snapshot():
         catalog = products.catalog()
         roots = {read_json(p)["id"]: p.parent for p in products.market.glob("*/manifest.json")}
         return {
@@ -313,7 +317,9 @@ def create_app(workspace: Path, *, _principal: str | None = None) -> FastAPI:
         if require_login and _principal is None:
             return {'csrf': csrf, 'account': {'principal': None, 'scoped': False}}
         return {'csrf': csrf, 'settings': settings.public(), 'providers': PROVIDERS,
-                'account': {'principal': _principal, 'scoped': _principal is not None}}
+                'version': __version__, 'platform_url': resource_nodes.platform['endpoint'],
+                'account': {'principal': _principal, 'scoped': _principal is not None,
+                            'name': getattr(app.state, 'account_name', _principal)}}
 
     @app.get("/api/settings")
     async def get_settings():

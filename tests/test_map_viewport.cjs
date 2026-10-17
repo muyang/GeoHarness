@@ -21,7 +21,7 @@ const listeners=new Map();
 const context=vm.createContext({
   URL,URLSearchParams,Number,Map,crypto:require('node:crypto').webcrypto,
   location:{origin:'http://127.0.0.1:8810',href:'http://127.0.0.1:8810/',pathname:'/',search:''},
-  window:{addEventListener:(name,listener)=>listeners.set(name,listener)},document:{body:{classList:{add(){}}}},
+  Event,window:{addEventListener:(name,listener)=>listeners.set(name,listener),dispatchEvent(){}},document:{body:{classList:{add(){}}}},
   $:id=>{if(!elements.has(id))elements.set(id,{src:'',querySelectorAll:()=>[]});return elements.get(id);},
   setInterval:()=>0,clearInterval(){},setTimeout:()=>0,clearTimeout(){},
   apiURL:p=>'/api/'+p,esc:value=>String(value??''),
