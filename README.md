@@ -2,9 +2,9 @@
 
 GeoNexus 的独立地理工作台。当前共享运行时使用 Python 服务与静态 Web UI，Platform 通过认证网关嵌入同一运行时；客户端和平台关联账号后，共享模型配置、对话、地图、执行记录与案例。
 
-本次提交版本为 `v0.3`，Python 包与客户端版本均为 `0.3.0`。源码同步至 [muyang/GeoHarness](https://github.com/muyang/GeoHarness) 与 [GeoNexus-Team/GeoHarness](https://github.com/GeoNexus-Team/GeoHarness)。GIS 计算由 GeoNode 完成；GeoHarness 负责资源发现、安装、配置、交互与任务编排，兼容官方 MCP。
+本次提交版本为 `v0.2.9`，Python 包与客户端版本均为 `0.2.9`。源码同步至 [muyang/GeoHarness](https://github.com/muyang/GeoHarness) 与 [GeoNexus-Team/GeoHarness](https://github.com/GeoNexus-Team/GeoHarness)。GIS 计算由 GeoNode 完成；GeoHarness 负责资源发现、安装、配置、交互与任务编排，兼容官方 MCP。
 
-## v0.3 更新
+## v0.2.9 更新
 
 ### 统一账号与共享工作台
 
@@ -83,7 +83,7 @@ npm ci
 npm test
 ```
 
-2026-10-16 本机通过 177 项 Python 测试与 10 项界面/桌面边界测试；构建的 wheel 包含登录页、地图查看器与版本 0.3.0 元数据。
+历史验证（2026-10-16）：本机通过 177 项 Python 测试与 10 项界面/桌面边界测试；构建的 wheel 包含登录页、地图查看器与版本 0.3.0 元数据。
 
 测试环境需匹配 SDK 与可选知识插件源码；实际验证范围及版本依赖应与发布记录一起查看，不把未启动的第三方服务报告为在线。
 
@@ -109,3 +109,5 @@ npm test
 ## RuoYi 地图会话兼容修复
 
 网关与客户端账号关联接受 `ruoyi:12` 等带命名空间的稳定账号ID，保留原始标识，以同一标识的哈希定位已有工作空间。签名、时间窗口、Platform来源、权限、CSRF及产物归属校验继续生效。客户端默认端口8810，默认Platform节点3301，均可通过部署参数明确配置。迁移端口后浏览器需在新入口重新登录，已配置模型和案例仍保存在原私有工作空间。
+
+2026-10-17 本版验证：界面/桌面边界 15 项通过；Python 全量运行中 176 项通过，3 项异步测试因测试环境缺少插件未执行，补齐已有本地 pytest-asyncio 后全部 8 项 host 测试通过；新增市场自动会话回归连同 27 项资源测试通过。GeoLibre 实际 WASI 上传/执行/下载、64 像元校验和跨账号拒绝已验证；OGE 实景可在 GeoLibre 地图加载。
