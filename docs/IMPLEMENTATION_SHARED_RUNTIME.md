@@ -68,8 +68,9 @@ GIS 计算在 GeoNode / GeoLibre / RustGIS 本地命令完成；GeoHarness 负�
 
 - 判定是纯函数 `policy.decide(action, args, confirm)`：命中 `actions`、或 bbox 面积超过 `extent_area_gt`、
   或显式 `raster_pixels` 超过 `raster_pixels_gt` 时报 `needs=true` 并给出原因；
-- 当前为**提示性**：判定随地图动作返回（`row.confirmation`），**不硬拦**——因为现有 UI 与案例大范围
-  （候鸟案例 bbox 约 3.6e13 m²）会必然触发；强制范围待定（见 §8）。
+- **已按用户决定落地强制范围**：只有 **Agent 发起**的调用被拦截（`source="agent"`），UI 路径不变；
+  拦截时返回 400 并给出原因，调用方须显式 `confirm=true` 重试（`confirm` 键会从动作/产品参数中移除）。
+- 判定仍随 UI 动作返回 `row.confirmation`（提示性）。地图动作与产品执行（`product.execute`）共用同一策略。
 - 默认值：`extent_area_gt = 5e9 m²`、`raster_pixels_gt = 1e8`（可配置）。
 
 ## 2. 命令适配（最小集 + 配置驱动）

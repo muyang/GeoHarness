@@ -92,3 +92,22 @@ def decide(action: str, arguments: dict[str, Any] | None, confirm: Any) -> dict[
         if pixels > settings["raster_pixels_gt"]:
             reasons.append(f"栅格约 {pixels:.2e} 像元，超过阈值 {settings['raster_pixels_gt']:.2e}")
     return {"needs": bool(reasons), "reasons": reasons, "settings": settings}
+
+
+def enforcement(
+    action: str,
+    arguments: dict[str, Any] | None,
+    confirm: Any,
+    source: str = "ui",
+    explicit_confirm: bool = False,
+) -> list[str]:
+    """Reasons that must block a call, or ``[]`` when it may proceed.
+
+    Only agent-initiated calls are gated: the UI keeps its direct behaviour, while
+    a model must ask the user (``confirm=true``) before a destructive action or a
+    range above the configured thresholds.
+    """
+    if source != "agent" or explicit_confirm:
+        return []
+    decision = decide(action, arguments, confirm)
+    return list(decision["reasons"]) if decision["needs"] else []

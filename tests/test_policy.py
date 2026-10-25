@@ -74,3 +74,30 @@ def test_decide_respects_disabled_and_custom_thresholds():
     assert decide("layer.remove", {}, {"enabled": False})["needs"] is False
     custom = {"extent_area_gt": 1.0e15}
     assert decide("view.set", {"bbox": [89.7, -10.05, 140.8, 50.2]}, custom)["needs"] is False
+
+
+def test_enforcement_only_gates_agents():
+    from geo_harness.policy import enforcement
+
+    assert enforcement("layer.remove", {"layer_id": "a"}, DEFAULT_CONFIRM, "ui") == []
+    reasons = enforcement("layer.remove", {"layer_id": "a"}, DEFAULT_CONFIRM, "agent")
+    assert reasons and "layer.remove" in reasons[0]
+
+
+def test_enforcement_allows_explicit_confirm():
+    from geo_harness.policy import enforcement
+
+    assert (
+        enforcement("layer.remove", {}, DEFAULT_CONFIRM, "agent", explicit_confirm=True)
+        == []
+    )
+
+
+def test_enforcement_covers_extent_threshold_and_disabled_policy():
+    from geo_harness.policy import enforcement
+
+    big = {"bbox": [89.7, -10.05, 140.8, 50.2]}
+    assert enforcement("view.set", big, DEFAULT_CONFIRM, "agent")
+    small = {"bbox": [100.0, 30.0, 100.1, 30.1]}
+    assert enforcement("view.set", small, DEFAULT_CONFIRM, "agent") == []
+    assert enforcement("layer.remove", {}, {"enabled": False}, "agent") == []

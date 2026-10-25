@@ -17,7 +17,7 @@ from geonexus.registration import RegistrationError
 
 from .core import inside, read_json, validate_arguments, write_private
 from .map_context import model_view
-from .policy import decide
+from .policy import decide, enforcement
 
 
 PRIVATE_KEYS = {'access_token', 'session_token', 'api_key', 'authorization', 'token', 'secret'}
@@ -198,11 +198,16 @@ class Workbench:
         self.persist_map()
         return self.context()
 
-    async def action(self, name, args, revision, base_url):
+    async def action(self, name, args, revision, base_url, source='ui'):
+        args = dict(args or {})
+        explicit_confirm = args.pop('confirm', False) is True
         if revision != self.state['revision']:
             raise RegistrationError('地图已变化，请读取最新地图上下文后再操作。')
         if name not in {'view.set', 'view.projection', 'layer.visibility', 'layer.style', 'layer.remove', 'undo', 'result.open'}:
             raise RegistrationError('未提供该地图动作。')
+        reasons = enforcement(name, args, self.settings.value.get('confirm'), source, explicit_confirm)
+        if reasons:
+            raise RegistrationError('该操作需要确认：' + '；'.join(reasons) + '。确认后以 confirm=true 重试。')
         decision = decide(name, args, self.settings.value.get('confirm'))
         project = copy.deepcopy(self.state['project'])
         commands = []
@@ -321,7 +326,12 @@ class Workbench:
             raise RegistrationError('本工作空间没有该执行记录。')
         return public_value(self.jobs[identity])
 
-    async def submit(self, product_id, arguments, expected_digest):
+    async def submit(self, product_id, arguments, expected_digest, source='ui'):
+        arguments = dict(arguments or {})
+        explicit_confirm = arguments.pop('confirm', False) is True
+        reasons = enforcement('product.execute', arguments, self.settings.value.get('confirm'), source, explicit_confirm)
+        if reasons:
+            raise RegistrationError('该执行需要确认：' + '；'.join(reasons) + '。确认后以 confirm=true 重试。')
         description = self.describe(product_id)
         if expected_digest != description['digest']:
             raise RegistrationError('产品版本已改变，请重新读取契约。')
@@ -520,14 +530,14 @@ class Workbench:
                         validate_arguments(available[name][1], args)
                         if name == 'map_context': result = model_view(self.context(for_model=True))
                         elif name == 'map_action':
-                            result = await self.action(args['action'], args.get('arguments', {}), args['expected_revision'], base_url)
+                            result = await self.action(args['action'], args.get('arguments', {}), args['expected_revision'], base_url, source='agent')
                             future = self.acks.get(result['id'])
                             yield {'type': 'map_command', 'command': result}
                             try: result = await asyncio.wait_for(asyncio.shield(future), 20)
                             except asyncio.TimeoutError: result = {**result, 'notice': '查看器尚未确认，不能声称已完成。'}
                         elif name == 'operator_search': result = self.search(args.get('query', ''))
                         elif name == 'operator_describe': result = self.describe(args['product_id'])
-                        elif name == 'operator_execute': result = await self.submit(args['product_id'], args['arguments'], args['expected_digest'])
+                        elif name == 'operator_execute': result = await self.submit(args['product_id'], args['arguments'], args['expected_digest'], source='agent')
                         elif name == 'execution_status': result = self.status(args['execution_id'])
                         elif name == 'workflow_plan': result=self.workflows.create(args['name'],args['steps'])
                         elif name == 'workflow_repair': result=self.workflows.repair(args['plan_id'],args['steps'])
