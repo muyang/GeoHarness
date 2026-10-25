@@ -155,7 +155,21 @@ class AgentAdapter(Protocol):
 4. 冻结流程跨模型漂移 → 记录 + 标注（已确认接受）。
 5. 子系统接口未知 → 先落端口与契约测试。
 
-## 8. 待确认
+## 8. 案例基线（已核实，2026-10-25）
+
+- Platform **v0.9.2 的示范案例是 `durham.case.transit-equity`**（Durham 公交公平性）：
+  案例包在 `public-products/cases/durham-transit-equity/`（geocard/lock/baseline/manifest），
+  由 `services/v02/case_stories.py` 从 `public-products/cases` 读取并经 `integration.py` 挂载；
+  README 有 Durham 专章，说明见 `docs/DURHAM_CASE_STORY.md`。规模：68 tracts / 22 interventions /
+  332,353 人口 / 840 站点 / 6 步真实执行 / 七章地图故事。
+- **候鸟-湿地案例不是 v0.9.2 的发布案例**：仓库里只有 `uploads/cases/flightway/*.csv`（上传夹具）
+  与 `docs/flightway-case-demo.md`（教学文档，自述数据为合成）。本地 `data/geonexus.db` 里的
+  `case-eaaf-wetland-priority` 属**未跟踪的开发数据**（`.gitignore` 含 `*.db`），重置代码不会更新它。
+- 对确认策略的影响：Durham 几何 bbox `[-79.0163, 35.8632, -78.6993, 36.2393]`，面积约
+  **1.19e9 m²（~1194 km²）**，低于 5e9 m² 阈值 —— 官方示范案例不会被阈值误触发。
+- 后续验证与截图**以 Durham 为基准案例**，不再使用本地旧 wetland 数据。
+
+## 9. 待确认
 
 - 地图侧上报频率（沿用现有 `sync`，建议 200–500ms 防抖）。
 - ~~注入点~~：已确认复用 `context(for_model=True)` + `model_view()`。
