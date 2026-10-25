@@ -165,7 +165,7 @@ class Workbench:
             'selection': None if for_model and restricted else observed.get('selection'),
             'observed_at': observed.get('at'),
             'viewer_connected': time.time() - observed.get('time', 0) < 120,
-            'active_tool': {'id': active.get('action'), 'state': 'armed', 'args': active.get('arguments') or {}, 'action_id': active.get('id')} if active else {'id': None, 'state': 'idle', 'args': {}},
+            'active_tool': {'id': active.get('action'), 'state': 'armed', 'args': active.get('arguments') or {}, 'action_id': active.get('id')} if active else public_value(observed.get('active_tool') or {'id': None, 'state': 'idle', 'args': {}}),
             'pending_actions': pending,
         }
 
@@ -194,7 +194,7 @@ class Workbench:
         ids = {l['id'] for l in self.state['project'].get('layers', [])}
         known = [{'id': l['id'], 'visible': bool(l.get('visible', True))} for l in layers if isinstance(l, dict) and l.get('id') in ids]
         previous = self.state.get('observed', {})
-        self.state['observed'] = {'viewport': clean or previous.get('viewport', {}), 'layers': known or previous.get('layers', []), 'selection': public_value(body.get('selection', previous.get('selection'))), 'at': datetime.now(timezone.utc).isoformat(), 'time': time.time()}
+        self.state['observed'] = {'viewport': clean or previous.get('viewport', {}), 'layers': known or previous.get('layers', []), 'selection': public_value(body.get('selection', previous.get('selection'))), 'active_tool': public_value(body.get('active_tool', previous.get('active_tool'))), 'at': datetime.now(timezone.utc).isoformat(), 'time': time.time()}
         self.persist_map()
         return self.context()
 

@@ -38,6 +38,7 @@ from .core import (
 )
 from .fixtures import seed_market
 from .observability import ConcurrencyGate, IdempotencyStore, Metrics, StreamHub
+from .commands import CommandRegistry
 from .plugins import Plugins
 from .resource_nodes import ResourceNodes
 from .results import Results, payload
@@ -1076,6 +1077,7 @@ def create_app(workspace: Path, *, _principal: str | None = None) -> FastAPI:
     gate = ConcurrencyGate(int(os.environ.get('GEOHARNESS_MAX_CONCURRENT', '8') or 8))
     metrics = Metrics()
     idempotency = IdempotencyStore()
+    command_registry = CommandRegistry(workbench)
     app.add_event_handler('shutdown', streams.close)
     app.state.workbench = workbench
     association = {}
@@ -1281,6 +1283,18 @@ def create_app(workspace: Path, *, _principal: str | None = None) -> FastAPI:
     async def conversation(identity: str):
         record=workbench.conversations.get(identity)
         return {k:v for k,v in record.items() if k!='messages'}
+
+    @app.get('/api/commands')
+    async def commands_list():return {'items':command_registry.list()}
+
+    @app.get('/api/commands/{command_id}')
+    async def commands_describe(command_id: str):return command_registry.describe(command_id)
+
+    @app.post('/api/commands/{command_id}/execute')
+    async def commands_execute(command_id: str, request: Request):
+        body=await request.json()
+        source='agent' if body.get('source')=='agent' else 'ui'
+        return await command_registry.execute(command_id,body.get('arguments') or {},source=source)
 
     @app.get('/api/metrics')
     async def api_metrics():return {'metrics':metrics.snapshot(),'streams':gate.snapshot()}
