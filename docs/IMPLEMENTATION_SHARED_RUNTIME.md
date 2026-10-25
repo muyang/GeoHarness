@@ -1,6 +1,6 @@
 # 共享运行时实施规格 v1（GeoHarness 0.2.9 × Platform v0.9.2）
 
-> 状态：草案（T1 已接线）。本文件是 GeoHarness 共享运行时与 Platform 工作台协同的实施依据。
+> 状态：草案（T1 已接线；确认策略已落地为可配置）。本文件是 GeoHarness 共享运行时与 Platform 工作台协同的实施依据。
 > 已确认的决策：① 子系统接口待沟通，先只定端口；② MapContext 含「当前激活工具 / 图层样式」；
 > ③ 先接最基本 GIS 命令，按子系统需求补充配置；④ 接受冻结流程的模型漂移，记录并标注。
 
@@ -56,6 +56,21 @@ GIS 计算在 GeoNode / GeoLibre / RustGIS 本地命令完成；GeoHarness 负�
   仅地图相关意图注入全量；其余意图只注入视口 + 选中。
 - **确认门**：`active_tool.state = armed` 时返回确认卡（工具、参数、作用范围、预计耗时）；未确认不执行。
 - **复现**：`Runtime.start` 时把当前 MapContext 快照写入 run record。
+
+## 1.1 确认策略（已实现，可配置）
+
+阈值存在工作区设置 `confirm` 块里，后台可改（`GET/POST /api/settings` 的 `confirm` 字段）：
+
+```json
+{"enabled": true, "actions": ["layer.remove", "result.open"],
+ "extent_area_gt": 5000000000, "raster_pixels_gt": 100000000}
+```
+
+- 判定是纯函数 `policy.decide(action, args, confirm)`：命中 `actions`、或 bbox 面积超过 `extent_area_gt`、
+  或显式 `raster_pixels` 超过 `raster_pixels_gt` 时报 `needs=true` 并给出原因；
+- 当前为**提示性**：判定随地图动作返回（`row.confirmation`），**不硬拦**——因为现有 UI 与案例大范围
+  （候鸟案例 bbox 约 3.6e13 m²）会必然触发；强制范围待定（见 §8）。
+- 默认值：`extent_area_gt = 5e9 m²`、`raster_pixels_gt = 1e8`（可配置）。
 
 ## 2. 命令适配（最小集 + 配置驱动）
 

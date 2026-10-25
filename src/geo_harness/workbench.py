@@ -17,6 +17,7 @@ from geonexus.registration import RegistrationError
 
 from .core import inside, read_json, validate_arguments, write_private
 from .map_context import model_view
+from .policy import decide
 
 
 PRIVATE_KEYS = {'access_token', 'session_token', 'api_key', 'authorization', 'token', 'secret'}
@@ -202,6 +203,7 @@ class Workbench:
             raise RegistrationError('地图已变化，请读取最新地图上下文后再操作。')
         if name not in {'view.set', 'view.projection', 'layer.visibility', 'layer.style', 'layer.remove', 'undo', 'result.open'}:
             raise RegistrationError('未提供该地图动作。')
+        decision = decide(name, args, self.settings.value.get('confirm'))
         project = copy.deepcopy(self.state['project'])
         commands = []
         if name == 'view.set':
@@ -259,6 +261,8 @@ class Workbench:
         if not commands:
             commands = [{'type': 'loadProject', 'payload': {'url': f'{base_url}/api/workbench/project?revision={self.state["revision"]}'}}]
         row = {'id': uuid.uuid4().hex, 'action': name, 'arguments': public_value(args), 'status': 'pending', 'revision': self.state['revision'], 'commands': commands}
+        if decision['needs']:
+            row['confirmation'] = {'needs': True, 'reasons': decision['reasons']}
         self.state['actions'] = (self.state['actions'] + [row])[-100:]
         self.acks[row['id']] = asyncio.get_running_loop().create_future()
         self.persist_map()

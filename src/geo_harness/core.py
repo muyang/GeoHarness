@@ -20,6 +20,7 @@ import jsonschema
 from geonexus.geocard import validate_card_schema
 from geonexus.registration import RegistrationError, safe_url, validate_profile
 from .llm import model_id_hint, is_model_not_found
+from .policy import DEFAULT_CONFIRM, normalize
 
 
 def read_json(path: Path, default: Any = None) -> Any:
@@ -257,7 +258,9 @@ class Settings:
     def __init__(self, workspace: Path):
         self.path = workspace / 'private-settings.json'
         self.value = read_json(self.path, {'llm': {'enabled': False, 'provider': 'compatible',
-            'base_url': '', 'model': '', 'api_key': '', 'temperature': 0.2}, 'viewer_url': 'local'})
+            'base_url': '', 'model': '', 'api_key': '', 'temperature': 0.2}, 'viewer_url': 'local',
+            'confirm': dict(DEFAULT_CONFIRM)})
+        self.value['confirm'] = normalize(self.value.get('confirm'))
 
     def public(self) -> dict[str, Any]:
         value = json.loads(json.dumps(self.value))
@@ -301,6 +304,10 @@ class Settings:
         temperature = current['temperature']
         if isinstance(temperature, bool) or not isinstance(temperature, (int, float)) or not math.isfinite(temperature) or not 0 <= temperature <= 2:
             raise RegistrationError('Temperature must be between 0 and 2.')
+        if 'confirm' in request:
+            candidate.value['confirm'] = normalize(request['confirm'])
+        else:
+            candidate.value['confirm'] = normalize(candidate.value.get('confirm'))
         if 'viewer_url' in request:
             value = request['viewer_url']
             if not isinstance(value, str):
