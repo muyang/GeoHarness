@@ -169,7 +169,28 @@ class AgentAdapter(Protocol):
   **1.19e9 m²（~1194 km²）**，低于 5e9 m² 阈值 —— 官方示范案例不会被阈值误触发。
 - 后续验证与截图**以 Durham 为基准案例**，不再使用本地旧 wetland 数据。
 
-## 9. 待确认
+## 9. 验证记录（2026-10-25，已按用户决定冻结在当前层级）
+
+用户决定：接受「包 + 服务 + 平台测试」验证层级；浏览器 `/cases` 截图留到部署环境。
+
+**已完成**
+- Durham 案例包：`manifest` 通过 `services/v02/solution-case.schema.json`；文件 SHA-256 与 manifest 一致；
+  68 tracts / 22 interventions / 332,353 人口 / 840 站点 / **6 步全部 succeeded**；输出 rankings 数 = interventions。
+- SDK 兼容层（以 released v1.1.0 为基线，分支 `release/1.1.1`，提交 `8988515`）：
+  - `geonexus.geocard.contracts`（ContractRequest/Report/ResultManifest/validate_contract），7 项单测；
+  - `create_mcp_server(server, http_guarded=False)` 返回 GeoMCPBridge（进程内 `call_tool`），2 项单测；
+  - 规则由平台测试反推，**需 SDK 负责人评审**（尤其 no-export 策略与 http_guarded 语义）。
+- 平台 `services/v02` 用该 SDK **启动成功**；`services/v02/test_case_stories.py` **6/6 通过**。
+
+**未做（留待部署环境）**
+- 浏览器 `/cases` 的 Durham 截图：案例可见性依赖节点目录发布 `durham.case.transit-equity` 及其组件卡
+  （`durham.data.*` 不在仓库，属于发布节点），需要 Java 控制面 + Postgres + 节点栈。
+
+**结论**
+- 仓库层面的 v0.9.2 × SDK v1.1.0 兼容性问题已消除（两个缺失 API 已补齐并测试）；
+- 端到端 UI 验收不在本地伪造，部署环境再补。
+
+## 10. 待确认
 
 - 地图侧上报频率（沿用现有 `sync`，建议 200–500ms 防抖）。
 - ~~注入点~~：已确认复用 `context(for_model=True)` + `model_view()`。
