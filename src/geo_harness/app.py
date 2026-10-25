@@ -9,6 +9,7 @@ import json
 import os
 import re
 import secrets
+import time
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -36,6 +37,7 @@ from .core import (
     write_private,
 )
 from .fixtures import seed_market
+from .observability import ConcurrencyGate, IdempotencyStore, Metrics, StreamHub
 from .plugins import Plugins
 from .resource_nodes import ResourceNodes
 from .results import Results, payload
@@ -1070,6 +1072,11 @@ def create_app(workspace: Path, *, _principal: str | None = None) -> FastAPI:
         raise RegistrationError("达到工具调用轮次上限；请缩小问题范围。")
 
     workbench = Workbench(workspace, products, resource_nodes, results, settings, invoke_product)
+    streams = StreamHub()
+    gate = ConcurrencyGate(int(os.environ.get('GEOHARNESS_MAX_CONCURRENT', '8') or 8))
+    metrics = Metrics()
+    idempotency = IdempotencyStore()
+    app.add_event_handler('shutdown', streams.close)
     app.state.workbench = workbench
     association = {}
     account = PlatformAccount(workspace, resource_nodes) if _principal is None else None
@@ -1275,6 +1282,9 @@ def create_app(workspace: Path, *, _principal: str | None = None) -> FastAPI:
         record=workbench.conversations.get(identity)
         return {k:v for k,v in record.items() if k!='messages'}
 
+    @app.get('/api/metrics')
+    async def api_metrics():return {'metrics':metrics.snapshot(),'streams':gate.snapshot()}
+
     @app.get('/api/workbench/plans')
     async def plans():return workbench.workflows.list()
 
@@ -1282,11 +1292,23 @@ def create_app(workspace: Path, *, _principal: str | None = None) -> FastAPI:
     async def plan_create(request: Request):
         body=await request.json();return workbench.workflows.create(body.get('name'),body.get('steps'))
 
+    async def _idempotent(request, key, action):
+        if not key:return await action()
+        if not idempotency.begin(key):
+            found,value=idempotency.get(key)
+            if found and value is not None:return value
+            return JSONResponse({'error':'相同请求正在执行。'},status_code=409)
+        try:result=await action()
+        except Exception:
+            idempotency.fail(key);raise
+        idempotency.finish(key,result);return result
+
     @app.post('/api/workbench/plans/{identity}/run')
     async def plan_run(identity: str, request: Request):
         body=await request.json()
         if body.get('authorized') is not True:raise RegistrationError('请授权执行当前计划。')
-        return await workbench.workflows.start(identity,body.get('expected_digest'))
+        return await _idempotent(request,request.headers.get('idempotency-key'),
+            lambda:workbench.workflows.start(identity,body.get('expected_digest')))
 
     @app.post('/api/workbench/plans/{identity}/stop')
     async def plan_stop(identity: str):return await workbench.workflows.stop(identity)
@@ -1306,7 +1328,8 @@ def create_app(workspace: Path, *, _principal: str | None = None) -> FastAPI:
     @app.post('/api/workbench/plans/{identity}/replay')
     async def plan_replay(identity: str, request: Request):
         body=await request.json() if await request.body() else {}
-        return await workbench.workflows.replay(identity,body.get('version'))
+        return await _idempotent(request,request.headers.get('idempotency-key'),
+            lambda:workbench.workflows.replay(identity,body.get('version')))
 
     @app.post('/api/workbench/chat/stream')
     async def workbench_chat(request: Request):
@@ -1316,12 +1339,27 @@ def create_app(workspace: Path, *, _principal: str | None = None) -> FastAPI:
             definitions.update({n: ('检索已安装的公开 GeoKG 知识和可核验引用。', tool_schemas[n]) for n in ['knowledge_search', 'knowledge_citations']})
         if not isinstance(body,dict):raise RegistrationError('对话输入必须是对象。')
         if body.get('conversation_id'):workbench.conversations.get(body['conversation_id'])
+        stream_id=str(body.get('stream_id') or uuid.uuid4().hex)
+        try:from_seq=int(request.headers.get('x-resume-from') or 0)
+        except ValueError:from_seq=0
+        if stream_id not in streams.tasks:
+            if not gate.acquire():
+                metrics.increment('streams.rejected')
+                return JSONResponse({'error':'并发对话已满，请稍后重试。'},status_code=429,headers={'Retry-After':'3'})
+            metrics.increment('streams.started');started=time.monotonic()
+            async def factory():
+                try:
+                    async for event in workbench.chat(body, str(request.base_url).rstrip('/'), {'definitions': definitions, 'run': workbench_legacy}):
+                        yield event
+                finally:
+                    gate.release()
+                    metrics.observe('stream.duration_ms',(time.monotonic()-started)*1000)
+                    metrics.increment('streams.finished')
+            streams.start(stream_id,factory)
         async def stream():
-            try:
-                async for event in workbench.chat(body, str(request.base_url).rstrip('/'), {'definitions': definitions, 'run': workbench_legacy}):
-                    yield json.dumps(event, ensure_ascii=False) + '\n'
-            except Exception as e:yield json.dumps({'type':'error','error':workbench.redact(e)[:1000]},ensure_ascii=False)+'\n'
-        return StreamingResponse(stream(), media_type='application/x-ndjson', headers={'X-Accel-Buffering': 'no'})
+            async for event in streams.follow(stream_id,from_seq):
+                yield json.dumps(event, ensure_ascii=False) + '\n'
+        return StreamingResponse(stream(), media_type='application/x-ndjson', headers={'X-Accel-Buffering': 'no','X-Stream-Id':stream_id})
 
     if _principal is None:
         app.add_middleware(WorkspaceGateway, key=os.environ.get('GEONEXUS_HARNESS_GATEWAY_KEY', ''), factory=scoped_application, local_account=lambda: association, root_cookie=(session_cookie, session_id), local_validate=validate_local_account)

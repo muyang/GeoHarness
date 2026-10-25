@@ -195,6 +195,18 @@ class AgentAdapter(Protocol):
   与 T4/policy/map-context 合计 **33 passed**。
 - **未接线**：`workbench.chat()` 仍走单一主智能体；等子系统给出任务入口后，只需填三个 adapter 并打开开关。
 
+## 8.3 生产化（T5，已实现，组件级验证）
+
+- `observability.py`：
+  - `EventLog`（有界、带 seq）、`StreamHub`（每流一个生成任务 + 多读者跟随；断线可用 `X-Resume-From`
+    从 seq 续传，**不重跑 Agent**，避免副作用重复）；错误也会作为事件留在流里；
+  - `IdempotencyStore`（`Idempotency-Key` 首次执行、重复返回缓存、进行中返回 409、TTL 900s）；
+  - `ConcurrencyGate`（默认上限 8，超限立即 429 + `Retry-After`）；`Metrics`（计数 + P50/P95/max）。
+- 接线（`app.py`）：`/api/workbench/chat/stream` 改为 **NDJSON 可续传流**（响应头 `X-Stream-Id`，
+  续传头 `X-Resume-From`），并发满返回 429；`plans/{id}/run|replay` 支持幂等键；新增 `GET /api/metrics`。
+- 测试：`tests/test_observability.py` 6 项（续传不重跑、错误入流、幂等、闸门、百分位）；合计 **40 passed**。
+- **未完成**：app 级 HTTP 冒烟被 SDK 差异阻断（见 §9 第四条）。
+
 ## 9. 验证记录（2026-10-25，已按用户决定冻结在当前层级）
 
 用户决定：接受「包 + 服务 + 平台测试」验证层级；浏览器 `/cases` 截图留到部署环境。
@@ -212,8 +224,14 @@ class AgentAdapter(Protocol):
 - 浏览器 `/cases` 的 Durham 截图：案例可见性依赖节点目录发布 `durham.case.transit-equity` 及其组件卡
   （`durham.data.*` 不在仓库，属于发布节点），需要 Java 控制面 + Postgres + 节点栈。
 
+**已发现但未补齐的第四处 SDK 差异**
+- `RegistryServer.__init__(..., public_submissions=...)`（GeoHarness 0.2.9 调用）在 released v1.1.0 中不存在；
+  未添加“无行为参数”的桩，因为那会让兼容层变成猜测实现。至此 dev SDK 1.1.1 已知缺少/新增：
+  `geocard.contracts`、`create_mcp_server(http_guarded=)`、`geonexus.registration`、`RegistryServer.public_submissions`。
+
 **结论**
-- 仓库层面的 v0.9.2 × SDK v1.1.0 兼容性问题已消除（两个缺失 API 已补齐并测试）；
+- 仓库层面的 v0.9.2 × SDK v1.1.0 兼容性问题**部分消除**（两个 API 已补齐并测试，registration 为临时适配）；
+- GeoHarness 的 app 级端到端仍需 dev SDK 或与 SDK 负责人做一次正式兼容评审；
 - 端到端 UI 验收不在本地伪造，部署环境再补。
 
 ## 10. 待确认
