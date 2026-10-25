@@ -37,6 +37,40 @@ def resolve(value, completed):
     if isinstance(value,list):return [resolve(x,completed) for x in value]
     return value
 
+def signature(document):
+    body={k:v for k,v in document.items() if k!='signature'}
+    return hashlib.sha256(json.dumps(body,sort_keys=True,ensure_ascii=False).encode()).hexdigest()
+
+def freeze_document(row, model, baseline):
+    """Immutable record of a proven plan (pure; no I/O)."""
+    document={
+        'workflow_id':row['id'],'name':row['name'],'source':row.get('source','ui'),
+        'steps':[{k:s.get(k) for k in ('id','product_id','expected_digest','arguments','depends_on')} for s in row['steps']],
+        'resources':[{'product_id':s['product_id'],'digest':s['expected_digest']} for s in row['steps']],
+        'model':model,'baseline':baseline,
+        'frozen_at':datetime.now(timezone.utc).isoformat(),
+    }
+    document['signature']=signature(document)
+    return document
+
+def result_digest(result):
+    if result is None:return None
+    return hashlib.sha256(json.dumps(result,sort_keys=True,ensure_ascii=False).encode()).hexdigest()
+
+def compare_baseline(baseline, current):
+    """Per-step drift: mismatching result digests, missing results, status changes."""
+    drift=[]
+    for step_id, expected in (baseline or {}).items():
+        actual=current.get(step_id)
+        if actual is None:
+            drift.append({'step':step_id,'reason':'missing','expected':expected})
+            continue
+        if expected.get('status')!=actual.get('status'):
+            drift.append({'step':step_id,'reason':'status','expected':expected.get('status'),'actual':actual.get('status')})
+        elif expected.get('result_digest')!=actual.get('result_digest'):
+            drift.append({'step':step_id,'reason':'result','expected':expected.get('result_digest'),'actual':actual.get('result_digest')})
+    return drift
+
 class Workflows:
     def __init__(self, wb):
         self.wb=wb;self.root=wb.root/'plans';self.rows={};self.tasks={}
@@ -55,7 +89,8 @@ class Workflows:
                 if step['status']=='running':step['status']=execution['status']
         return value
     def list(self):return [self.get(r['id']) for r in sorted(self.rows.values(),key=lambda r:r['created_at'],reverse=True)[:100]]
-    def create(self, name, steps):
+    def create(self, name, steps, source='ui'):
+        if source not in {'ui','agent'}:raise RegistrationError('计划来源无效。')
         if not isinstance(name,str) or not 1<=len(name.strip())<=100 or not isinstance(steps,list) or not 1<=len(steps)<=8:raise RegistrationError('计划需要名称与1–8个步骤。')
         previous=set();spec=[]
         for s in steps:
@@ -78,8 +113,56 @@ class Workflows:
                 spec[-1]['reuse_execution_id']=old['id']
             previous.add(identity)
         packed=json.dumps({'name':name.strip(),'steps':[{k:v for k,v in s.items() if k not in {'name','status'}} for s in spec]},sort_keys=True,ensure_ascii=False)
-        row={'id':uuid.uuid4().hex,'name':name.strip(),'digest':hashlib.sha256(packed.encode()).hexdigest(),'steps':spec,'status':'planned','created_at':datetime.now(timezone.utc).isoformat()}
+        row={'id':uuid.uuid4().hex,'name':name.strip(),'digest':hashlib.sha256(packed.encode()).hexdigest(),'steps':spec,'status':'planned','source':source,'created_at':datetime.now(timezone.utc).isoformat()}
         self.rows[row['id']]=row;self.save(row);return self.get(row['id'])
+    def _model(self):
+        llm=self.wb.settings.value.get('llm',{}) if getattr(self.wb,'settings',None) else {}
+        return {'id':llm.get('model') or None,'params':{'temperature':llm.get('temperature')}}
+
+    def _baseline(self, row):
+        baseline={}
+        for step in row['steps']:
+            execution=step.get('execution_id')
+            if not execution:continue
+            try:job=self.wb.status(execution)
+            except Exception:continue
+            baseline[step['id']]={'status':job.get('status'),'result_digest':result_digest(job.get('result'))}
+        return baseline
+
+    def freeze(self, identity, version=None):
+        row=self.get(identity)
+        if row['status']!='completed':raise RegistrationError('只有已完成的计划可以冻结。')
+        document=freeze_document(row,self._model(),self._baseline(row))
+        target=self.root.parent/'frozen'/f"{row['id']}-v{version or 1}.json"
+        write_private(target,document)
+        row.setdefault('frozen',[]).append({'version':version or 1,'signature':document['signature'],'at':document['frozen_at']})
+        self.save(row)
+        return document
+
+    def frozen(self, identity, version=None):
+        row=self.rows.get(identity)
+        if not row:raise RegistrationError('计划不存在。')
+        entries=row.get('frozen') or []
+        if not entries:raise RegistrationError('该计划尚未冻结。')
+        chosen=entries[-1] if version is None else next((e for e in entries if e['version']==version),None)
+        if not chosen:raise RegistrationError('冻结版本不存在。')
+        document=read_json(self.root.parent/'frozen'/f"{row['id']}-v{chosen['version']}.json")
+        if not document or signature(document)!=document.get('signature'):
+            raise RegistrationError('冻结记录签名校验失败。')
+        return document
+
+    async def replay(self, identity, version=None):
+        document=self.frozen(identity,version)
+        drift_contract=[r for r in document['resources'] if self.wb.describe(r['product_id'])['digest']!=r['digest']]
+        if drift_contract:raise RegistrationError('产品契约已变化，冻结版本不能回放。')
+        plan=self.create(document['name']+' · 回放',document['steps'],source=document.get('source','ui'))
+        await self.start(plan['id'],plan['digest'])
+        task=self.tasks.get(plan['id'])
+        if task:await asyncio.shield(task)
+        current=self._baseline(self.rows[plan['id']])
+        return {'workflow_id':document['workflow_id'],'version':version or (self.rows[identity]['frozen'][-1]['version']),
+                'plan':self.get(plan['id']),'drift':compare_baseline(document['baseline'],current)}
+
     def repair(self, identity, steps):
         old=self.get(identity)
         if old['status'] in {'queued','running','stopping'}:raise RegistrationError('请先停止正在执行的计划，再修正。')
@@ -105,7 +188,7 @@ class Workflows:
                 if step.get('reuse_execution_id'):
                     job=self.wb.status(step['reuse_execution_id'])
                     if job['arguments']!=args:raise RegistrationError('复用输入与本次参数不一致，未复用旧成果。')
-                else:job=await self.wb.submit(step['product_id'],args,step['expected_digest'])
+                else:job=await self.wb.submit(step['product_id'],args,step['expected_digest'],source=row.get('source','ui'))
                 step.update(status='running',execution_id=job['id'],resolved_arguments=args);self.save(row)
                 if not step.get('reuse_execution_id'):await asyncio.shield(self.wb.tasks[job['id']])
                 job=self.wb.status(job['id'])

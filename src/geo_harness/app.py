@@ -1295,6 +1295,19 @@ def create_app(workspace: Path, *, _principal: str | None = None) -> FastAPI:
     async def plan_case(identity: str, request: Request):
         body=await request.json();return workbench.save_workflow_case(identity,body.get('name'))
 
+    @app.post('/api/workbench/plans/{identity}/freeze')
+    async def plan_freeze(identity: str, request: Request):
+        body=await request.json() if await request.body() else {}
+        return workbench.workflows.freeze(identity,body.get('version'))
+
+    @app.get('/api/workbench/plans/{identity}/frozen')
+    async def plan_frozen(identity: str):return workbench.workflows.frozen(identity)
+
+    @app.post('/api/workbench/plans/{identity}/replay')
+    async def plan_replay(identity: str, request: Request):
+        body=await request.json() if await request.body() else {}
+        return await workbench.workflows.replay(identity,body.get('version'))
+
     @app.post('/api/workbench/chat/stream')
     async def workbench_chat(request: Request):
         body = await request.json()

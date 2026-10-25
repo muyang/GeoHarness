@@ -69,7 +69,7 @@ GIS 计算在 GeoNode / GeoLibre / RustGIS 本地命令完成；GeoHarness 负�
 - 判定是纯函数 `policy.decide(action, args, confirm)`：命中 `actions`、或 bbox 面积超过 `extent_area_gt`、
   或显式 `raster_pixels` 超过 `raster_pixels_gt` 时报 `needs=true` 并给出原因；
 - **已按用户决定落地强制范围**：只有 **Agent 发起**的调用被拦截（`source="agent"`），UI 路径不变；
-  拦截时返回 400 并给出原因，调用方须显式 `confirm=true` 重试（`confirm` 键会从动作/产品参数中移除）。
+  拦截时返回 400 并给出原因，调用方须显式 `_policy_confirm=true` 重试（保留名不会与产品参数冲突）。
 - 判定仍随 UI 动作返回 `row.confirmation`（提示性）。地图动作与产品执行（`product.execute`）共用同一策略。
 - 默认值：`extent_area_gt = 5e9 m²`、`raster_pixels_gt = 1e8`（可配置）。
 
@@ -169,6 +169,17 @@ class AgentAdapter(Protocol):
 - 对确认策略的影响：Durham 几何 bbox `[-79.0163, 35.8632, -78.6993, 36.2393]`，面积约
   **1.19e9 m²（~1194 km²）**，低于 5e9 m² 阈值 —— 官方示范案例不会被阈值误触发。
 - 后续验证与截图**以 Durham 为基准案例**，不再使用本地旧 wetland 数据。
+
+## 8.1 冻结、回放与漂移（T4，已实现）
+
+- 计划（plan）记录来源 `source`（`ui`/`agent`）；Agent 创建的计划在执行时按 `source=agent` 走确认策略。
+- `POST /api/workbench/plans/{id}/freeze`：仅接受**已完成**计划，产出冻结文档
+  `{workflow_id, name, source, steps, resources[{product_id,digest}], model{id,params}, baseline, frozen_at, signature}`，
+  存于 `workspace/frozen/<id>-v<version>.json`，SHA-256 签名覆盖除签名外的全部字段。
+- `GET /api/workbench/plans/{id}/frozen`：读取最近（或指定版本）冻结记录并校验签名。
+- `POST /api/workbench/plans/{id}/replay`：校验资源 digest → 另建计划重跑 → 对比 `baseline`
+  （状态 + 结果摘要），输出 `drift[{step, reason, expected, actual}]`；**只标注不阻断**（用户已确认接受漂移）。
+- 纯函数（可单测）：`signature/freeze_document/result_digest/compare_baseline`，7 项测试。
 
 ## 9. 验证记录（2026-10-25，已按用户决定冻结在当前层级）
 

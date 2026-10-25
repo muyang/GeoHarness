@@ -200,14 +200,14 @@ class Workbench:
 
     async def action(self, name, args, revision, base_url, source='ui'):
         args = dict(args or {})
-        explicit_confirm = args.pop('confirm', False) is True
+        explicit_confirm = args.pop('_policy_confirm', False) is True
         if revision != self.state['revision']:
             raise RegistrationError('地图已变化，请读取最新地图上下文后再操作。')
         if name not in {'view.set', 'view.projection', 'layer.visibility', 'layer.style', 'layer.remove', 'undo', 'result.open'}:
             raise RegistrationError('未提供该地图动作。')
         reasons = enforcement(name, args, self.settings.value.get('confirm'), source, explicit_confirm)
         if reasons:
-            raise RegistrationError('该操作需要确认：' + '；'.join(reasons) + '。确认后以 confirm=true 重试。')
+            raise RegistrationError('该操作需要确认：' + '；'.join(reasons) + '。确认后以 _policy_confirm=true 重试。')
         decision = decide(name, args, self.settings.value.get('confirm'))
         project = copy.deepcopy(self.state['project'])
         commands = []
@@ -328,10 +328,10 @@ class Workbench:
 
     async def submit(self, product_id, arguments, expected_digest, source='ui'):
         arguments = dict(arguments or {})
-        explicit_confirm = arguments.pop('confirm', False) is True
+        explicit_confirm = arguments.pop('_policy_confirm', False) is True
         reasons = enforcement('product.execute', arguments, self.settings.value.get('confirm'), source, explicit_confirm)
         if reasons:
-            raise RegistrationError('该执行需要确认：' + '；'.join(reasons) + '。确认后以 confirm=true 重试。')
+            raise RegistrationError('该执行需要确认：' + '；'.join(reasons) + '。确认后以 _policy_confirm=true 重试。')
         description = self.describe(product_id)
         if expected_digest != description['digest']:
             raise RegistrationError('产品版本已改变，请重新读取契约。')
@@ -539,7 +539,7 @@ class Workbench:
                         elif name == 'operator_describe': result = self.describe(args['product_id'])
                         elif name == 'operator_execute': result = await self.submit(args['product_id'], args['arguments'], args['expected_digest'], source='agent')
                         elif name == 'execution_status': result = self.status(args['execution_id'])
-                        elif name == 'workflow_plan': result=self.workflows.create(args['name'],args['steps'])
+                        elif name == 'workflow_plan': result=self.workflows.create(args['name'],args['steps'],source='agent')
                         elif name == 'workflow_repair': result=self.workflows.repair(args['plan_id'],args['steps'])
                         elif name == 'workflow_execute': result=await self.workflows.start(args['plan_id'],args['expected_digest'])
                         elif name == 'workflow_status':
