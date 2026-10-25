@@ -181,6 +181,20 @@ class AgentAdapter(Protocol):
   （状态 + 结果摘要），输出 `drift[{step, reason, expected, actual}]`；**只标注不阻断**（用户已确认接受漂移）。
 - 纯函数（可单测）：`signature/freeze_document/result_digest/compare_baseline`，7 项测试。
 
+## 8.2 子系统智能体端口与路由（T3，已实现、未接线）
+
+- `agents/protocol.py`：统一任务信封 `TaskEnvelope`（task_id/thread_id/parent_run_id/goal/
+  context{page,map_revision,selection,case_id}/budget{tier,calls_left}/constraints{must_confirm,visibility}），
+  `AgentCapabilities`、`AgentAdapter` 四方法（health/capabilities/task/cancel）与三类错误
+  （AgentUnavailable/Timeout/Rejected）。
+- `agents/adapters.py`：HTTP / MCP / SDK 三个**未配置**实现——`health()` 返回 `unsupported` 并说明原因，
+  `task()` 抛 `AgentUnavailable`，`cancel()` 幂等；不伪造能力。
+- `agents/router.py`：显式 @提及 → 关键词按**命中数**打分 → 可选分类器（注入，阈值 0.6）→ 主智能体兜底；
+  `routing_enabled()` 读 `GEONEXUS_AGENT_ROUTING`，默认关闭。
+- 测试：`tests/agents/conformance.py`（可复用一致性检查）+ `tests/test_agent_conformance.py` 9 项；
+  与 T4/policy/map-context 合计 **33 passed**。
+- **未接线**：`workbench.chat()` 仍走单一主智能体；等子系统给出任务入口后，只需填三个 adapter 并打开开关。
+
 ## 9. 验证记录（2026-10-25，已按用户决定冻结在当前层级）
 
 用户决定：接受「包 + 服务 + 平台测试」验证层级；浏览器 `/cases` 截图留到部署环境。
