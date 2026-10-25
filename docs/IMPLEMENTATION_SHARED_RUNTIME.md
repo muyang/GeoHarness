@@ -1,6 +1,6 @@
 # 共享运行时实施规格 v1（GeoHarness 0.2.9 × Platform v0.9.2）
 
-> 状态：草案（T1 进行中）。本文件是 GeoHarness 共享运行时与 Platform 工作台协同的实施依据。
+> 状态：草案（T1 已接线）。本文件是 GeoHarness 共享运行时与 Platform 工作台协同的实施依据。
 > 已确认的决策：① 子系统接口待沟通，先只定端口；② MapContext 含「当前激活工具 / 图层样式」；
 > ③ 先接最基本 GIS 命令，按子系统需求补充配置；④ 接受冻结流程的模型漂移，记录并标注。
 
@@ -15,7 +15,13 @@ GIS 计算在 GeoNode / GeoLibre / RustGIS 本地命令完成；GeoHarness 负�
 1. **一套运行时**：两端只渲染同一运行时的 UI，不复制逻辑。
 2. **三条同源**：同 `thread_id`、同 `MapContext`、同 `case/workflow` 目录。
 
-## 1. MapContext v1
+## 1. MapContext v1（复用现有来源，不建独立存储）
+
+**实现决策（2026-10-25）**：地图状态只有一个来源 —— `Workbench.state` / `Workbench.context()`。
+本版不建独立 MapContext 存储（曾写过一版，已删）：`context()` 增加 `layers[].style` 与派生的
+`active_tool`（取最后一条 `pending` 地图动作），模型侧只通过纯函数 `map_context.model_view()` 裁剪
+（层数/字段/待确认动作上限），并在 `chat()` 的 `<map_context>` 注入与 `map_context` 工具里统一使用；
+任务提交时把 `model_view(context)` 写入任务记录，案例已按同样方式快照。
 
 结构（示例）：
 
@@ -136,8 +142,7 @@ class AgentAdapter(Protocol):
 
 ## 8. 待确认
 
-- `/api/map-context` 的路径与动词（GET 快照 / POST patch）。
-- 地图侧上报频率（建议 200–500ms 防抖，仅 viewport/selection/active_tool 变化时）。
-- 注入点是否直接改 `Workbench.context(for_model=True)`。
-- run 启动时快照是否入 `run.json`。
+- 地图侧上报频率（沿用现有 `sync`，建议 200–500ms 防抖）。
+- ~~注入点~~：已确认复用 `context(for_model=True)` + `model_view()`。
+- ~~任务快照~~：已在 `submit` 记录写入 `map_context`（待确认是否也写入 `Runtime.start` 的 demo run）。
 - Platform `/map-viewer.html` 是否同步上报（跨仓任务）。
