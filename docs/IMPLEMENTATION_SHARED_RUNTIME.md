@@ -207,6 +207,12 @@ class AgentAdapter(Protocol):
 - 测试：`tests/test_observability.py` 6 项（续传不重跑、错误入流、幂等、闸门、百分位）；合计 **40 passed**。
 - **未完成**：app 级 HTTP 冒烟被 SDK 差异阻断（见 §9 第四条）。
 
+## 8.4 地图侧钩子（T2 的另一半）
+
+服务端已接收 `active_tool`；Platform `/map-viewer.html` 只需按 `docs/MAP_CONTEXT_HOOK.md`
+上报 `{revision, viewport, layers, selection, active_tool}` 到现有 `POST /api/workbench/sync`（300ms 防抖）。
+验收：移动/缩放后 revision 增加；armed 工具能被 `map_context` 读到；Agent 的 `layer.remove` 被 400 拦截。
+
 ## 9. 验证记录（2026-10-25，已按用户决定冻结在当前层级）
 
 用户决定：接受「包 + 服务 + 平台测试」验证层级；浏览器 `/cases` 截图留到部署环境。
