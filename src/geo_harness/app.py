@@ -1078,7 +1078,10 @@ def create_app(workspace: Path, *, _principal: str | None = None) -> FastAPI:
     metrics = Metrics()
     idempotency = IdempotencyStore()
     command_registry = CommandRegistry(workbench)
-    app.add_event_handler('shutdown', streams.close)
+    if hasattr(app,'add_event_handler'):
+        app.add_event_handler('shutdown', streams.close)
+    elif hasattr(app.router,'on_shutdown'):
+        app.router.on_shutdown.append(streams.close)
     app.state.workbench = workbench
     association = {}
     account = PlatformAccount(workspace, resource_nodes) if _principal is None else None
