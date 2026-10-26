@@ -213,6 +213,17 @@ class AgentAdapter(Protocol):
 上报 `{revision, viewport, layers, selection, active_tool}` 到现有 `POST /api/workbench/sync`（300ms 防抖）。
 验收：移动/缩放后 revision 增加；armed 工具能被 `map_context` 读到；Agent 的 `layer.remove` 被 400 拦截。
 
+## 8.5 SDK 基线切换与压测准备（2026-10-26）
+
+- 官方 SDK 已发布：`origin/main` = `b38f7ce`（`1.1.1.dev20261015`），包含此前反推的**全部四处** API
+  （`geocard.contracts`、`create_mcp_server(http_guarded=)`、`geonexus.registration`、注册中心三参数）。
+- 工作树切到 `sdk-1.1.1.dev`（官方 main），editable 元数据为 `1.1.1.dev20261015`；我们的 `release/1.1.1`
+  兼容分支保留为参考、不再是安装源。
+- 官方 SDK 下复跑：平台 `services/v02` 启动、`test_case_stories.py` **6/6**；GeoHarness **45 passed**；
+  `create_app` 冒烟与路由级续传测试通过。
+- 压测脚本 `scripts/load_stream.py` 已就绪（并发/吞吐/P50/P95/P99/429/序号缺口 + 续传检查），
+  按约定**待 SDK 评审后执行**。
+
 ## 9. 验证记录（2026-10-25，已按用户决定冻结在当前层级）
 
 用户决定：接受「包 + 服务 + 平台测试」验证层级；浏览器 `/cases` 截图留到部署环境。
