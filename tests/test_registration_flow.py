@@ -62,3 +62,17 @@ def test_draft_rejects_unknown_kind(client):
         headers={"X-Geo-CSRF": client.csrf},
     )
     assert response.status_code == 400
+
+
+def test_incomplete_metadata_reports_the_required_fields(client):
+    incomplete = {key: value for key, value in CARD.items() if key not in {"license", "provenance", "x-geonexus"}}
+    response = client.post(
+        "/api/register/draft",
+        json={"metadata": incomplete, "kind": "data", "node_url": "http://127.0.0.1:8787"},
+        headers={"X-Geo-CSRF": client.csrf},
+    )
+    assert response.status_code == 200, response.text
+    validation = response.json()["validation"]
+    assert validation["valid"] is False
+    joined = " ".join(validation["profile_errors"])
+    assert "license" in joined and "provenance.provider" in joined and "x-geonexus.revision" in joined
