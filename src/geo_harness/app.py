@@ -446,6 +446,8 @@ def create_app(workspace: Path, *, _principal: str | None = None) -> FastAPI:
         value = make_draft(body["metadata"], body["kind"], operation=body.get("operation"))
         if body.get("node_url"):
             value["binding"]["node_url"] = safe_url(body["node_url"])
+            # 官方 registration 以 binding.endpoint 表示执行入口；node_url 是本客户的命名。
+            value["binding"].setdefault("endpoint", value["binding"]["node_url"])
         value["validation"] = validate_profile(value["card"], value["binding"]).to_dict()
         return value
 
